@@ -1,0 +1,28 @@
+Title,Description,List,Labels,Estimate (Hours)
+"Setup: Create Xcode Project","Initialise new SwiftUI project for ResticMac","Foundation","setup,foundation",0.5
+"Setup: Configure SwiftPackage","Set up package structure and dependencies","Foundation","setup,foundation",0.5
+"Core: Implement ProcessExecutor","Create command execution utility for restic operations","Foundation","core,foundation",2
+"Core: Create ResticCommand","Implement command structure for restic operations","Foundation","core,foundation",2
+"Core: ResticService Base","Develop basic service setup for core operations","Foundation","core,foundation",3
+"Service: Repository Init","Implement repository initialisation functionality","Repository","service,repository",2
+"Service: Error Handling","Create basic error types and handling","Repository","service,error-handling",2
+"UI: MainView Tabs","Create tab structure for main interface","Repository","ui,repository",1
+"UI: RepositoryForm","Develop repository creation form","Repository","ui,repository",3
+"Service: Snapshot Creation","Implement snapshot creation functionality","Backup","service,backup",3
+"Service: Progress Handling","Implement basic progress tracking","Backup","service,backup",2
+"UI: BackupView","Create backup interface","Backup","ui,backup",2
+"UI: PathSelector","Implement path selection component","Backup","ui,backup",1
+"Service: SchedulerService","Implement basic scheduler functionality","Scheduling","service,scheduling",3
+"Service: Background Tasks","Implement background task handling","Scheduling","service,scheduling",2
+"UI: ScheduleView","Create schedule interface","Scheduling","ui,scheduling",2
+"UI: TimeSelector","Implement time selection component","Scheduling","ui,scheduling",1
+"UI: Error Messages","Implement user feedback for errors","Polish","ui,polish",2
+"UI: Progress Indicators","Add status display components","Polish","ui,polish",2
+"UI: ComingSoonView","Create placeholder components","Polish","ui,polish",2
+"Testing: Core Workflow","Basic testing of main features","Polish","testing",2
+"Testing: Repository","Test repository creation functionality","Testing","testing,repository",3
+"Testing: Backup","Test snapshot creation functionality","Testing","testing,backup",3
+"Testing: Schedule","Test scheduler functionality","Testing","testing,scheduling",2
+"Polish: Bug Fixes","Address known issues","Finalisation","polish,bugs",4
+"Polish: UI Refinements","Final UI improvements","Finalisation","polish,ui",2
+"Documentation: Basic Docs","Create basic documentation","Finalisation","documentation",2
