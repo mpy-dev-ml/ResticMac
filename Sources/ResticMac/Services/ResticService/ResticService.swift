@@ -1,5 +1,4 @@
 import Foundation
-import SwiftShell
 import Logging
 
 protocol ResticServiceProtocol {
@@ -12,11 +11,17 @@ protocol ResticServiceProtocol {
 }
 
 class ResticService: ResticServiceProtocol {
-    private let logger = Logger(label: "com.resticmac.ResticService")
+    private let logger = Logger(label: Constants.Loggers.resticService)
     private weak var commandDisplay: CommandDisplayViewModel?
+    private var processExecutor: ProcessExecutor!
+    
+    init() {
+        self.processExecutor = ProcessExecutor()
+    }
     
     func setCommandDisplay(_ display: CommandDisplayViewModel) async {
         self.commandDisplay = display
+        self.processExecutor = ProcessExecutor(outputHandler: CommandOutputHandler(displayViewModel: display))
     }
     
     func verifyInstallation() async throws {
@@ -46,49 +51,41 @@ class ResticService: ResticServiceProtocol {
     func executeCommand(_ command: ResticCommand) async throws -> String {
         logger.debug("Executing command: \(command.displayCommand)")
         
-        var context = CustomContext(main)
+        var environment: [String: String] = [:]
         if let password = command.password {
-            context.env["RESTIC_PASSWORD"] = password
+            environment[Constants.Environment.resticPassword] = password
         }
         
         await commandDisplay?.displayCommand(command)
         
         do {
-            let runAsync: AsyncCommand
+            let result: ProcessResult
             
             // Special handling for find command
             if case .scan = command {
-                runAsync = context.runAsync("find", command.arguments)
+                result = try await processExecutor.execute(
+                    command: Constants.Commands.find,
+                    arguments: command.arguments,
+                    environment: environment
+                )
             } else {
-                runAsync = context.runAsync("restic", command.arguments)
+                result = try await processExecutor.execute(
+                    command: Constants.Commands.restic,
+                    arguments: command.arguments,
+                    environment: environment
+                )
             }
             
-            var outputBuffer = ""
-            var errorBuffer = ""
-            
-            // Handle output streaming
-            for line in runAsync.stdout.lines() {
-                let output = line + "\n"
-                outputBuffer += output
-                await commandDisplay?.appendOutput(output)
+            if !result.isSuccess {
+                throw ResticError.commandFailed(code: result.exitCode, message: result.error)
             }
             
-            for line in runAsync.stderror.lines() {
-                let error = "Error: " + line + "\n"
-                errorBuffer += error
-                await commandDisplay?.appendOutput(error)
-            }
+            return result.output
             
-            let result = try runAsync.finish()
-            if result.exitcode() != 0 {
-                throw ResticError.commandFailed(code: result.exitcode(), message: errorBuffer)
-            }
-            
-            return outputBuffer
-        } catch let error as ResticError {
+        } catch let error as ProcessError {
             logger.error("Command failed: \(error.localizedDescription)")
             await commandDisplay?.appendOutput("Error: \(error.localizedDescription)\n")
-            throw error
+            throw ResticError.commandFailed(code: -1, message: error.localizedDescription)
         } catch {
             logger.error("Command failed: \(error.localizedDescription)")
             await commandDisplay?.appendOutput("Error: \(error.localizedDescription)\n")

@@ -13,22 +13,22 @@ enum ResticCommand {
     var command: String {
         switch self {
         case .version:
-            return "restic version"
+            return "\(Constants.Commands.restic) version"
         case .initialize(let path, _):
-            return "restic init --repo \"\(path.path)\""
+            return "\(Constants.Commands.restic) init --repo \"\(path.path)\""
         case .backup(let repository, let paths, _):
             let pathsString = paths.map { "\"\($0.path)\"" }.joined(separator: " ")
-            return "restic --repo \"\(repository.path)\" backup \(pathsString)"
+            return "\(Constants.Commands.restic) --repo \"\(repository.path)\" backup \(pathsString)"
         case .check(let repository, _):
-            return "restic --repo \"\(repository.path)\" check"
+            return "\(Constants.Commands.restic) --repo \"\(repository.path)\" check"
         case .snapshots(let repository, _):
-            return "restic --repo \"\(repository.path)\" snapshots --json"
+            return "\(Constants.Commands.restic) --repo \"\(repository.path)\" snapshots \(Constants.Arguments.json)"
         case .scan(let directory):
-            return "find"
+            return Constants.Commands.find
         case .scanRepository(let repository, _):
-            return "restic --repo \"\(repository.path)\" scan"
+            return "\(Constants.Commands.restic) --repo \"\(repository.path)\" scan"
         case .listSnapshots(let repository, _):
-            return "restic --repo \"\(repository.path)\" snapshots"
+            return "\(Constants.Commands.restic) --repo \"\(repository.path)\" snapshots"
         }
     }
     
@@ -52,7 +52,7 @@ enum ResticCommand {
         case .check(let repository, _):
             return ["check", "--repo", repository.path]
         case .snapshots(let repository, _):
-            return ["snapshots", "--repo", repository.path, "--json"]
+            return ["snapshots", "--repo", repository.path, Constants.Arguments.json]
         case .scan(let directory):
             return [directory.path, "-type", "f", "-name", "config"]
         case .scanRepository(let repository, _):
