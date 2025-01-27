@@ -2,63 +2,51 @@ import Foundation
 
 enum ResticCommand {
     case version
-    case initialize(repository: URL, password: String)
+    case initRepository(at: URL, password: String)
     case backup(repository: URL, paths: [URL], password: String)
     case check(repository: URL, password: String)
-    case snapshots(repository: URL, password: String)
-    case scan(directory: URL)
     case scanRepository(repository: URL, password: String)
     case listSnapshots(repository: URL, password: String)
-    
-    var command: String {
-        switch self {
-        case .version:
-            return "\(Constants.Commands.restic) version"
-        case .initialize(let path, _):
-            return "\(Constants.Commands.restic) init --repo \"\(path.path)\""
-        case .backup(let repository, let paths, _):
-            let pathsString = paths.map { "\"\($0.path)\"" }.joined(separator: " ")
-            return "\(Constants.Commands.restic) --repo \"\(repository.path)\" backup \(pathsString)"
-        case .check(let repository, _):
-            return "\(Constants.Commands.restic) --repo \"\(repository.path)\" check"
-        case .snapshots(let repository, _):
-            return "\(Constants.Commands.restic) --repo \"\(repository.path)\" snapshots \(Constants.Arguments.json)"
-        case .scan(let directory):
-            return Constants.Commands.find
-        case .scanRepository(let repository, _):
-            return "\(Constants.Commands.restic) --repo \"\(repository.path)\" scan"
-        case .listSnapshots(let repository, _):
-            return "\(Constants.Commands.restic) --repo \"\(repository.path)\" snapshots"
-        }
-    }
+    case restore(repository: URL, snapshot: String, target: URL, password: String)
     
     var displayCommand: String {
-        // Return command with password redacted for display
-        var cmd = command
-        if let password = password {
-            cmd = cmd.replacingOccurrences(of: password, with: "********")
+        switch self {
+        case .version:
+            return "restic version"
+        case .initRepository(let path, _):
+            return "restic init --repository \(path.path) --json"
+        case .backup(let repository, let paths, _):
+            let pathsString = paths.map { $0.path }.joined(separator: " ")
+            return "restic backup --repository \(repository.path) \(pathsString) --json"
+        case .check(let repository, _):
+            return "restic check --repository \(repository.path) --json"
+        case .scanRepository(let repository, _):
+            return "restic snapshots --repository \(repository.path) --json"
+        case .listSnapshots(let repository, _):
+            return "restic snapshots --repository \(repository.path) --json"
+        case .restore(let repository, let snapshot, let target, _):
+            return "restic restore \(snapshot) --repository \(repository.path) --target \(target.path) --json"
         }
-        return cmd
     }
     
     var arguments: [String] {
         switch self {
         case .version:
             return ["version"]
-        case .initialize(let repository, _):
-            return ["init", "--repo", repository.path]
+        case .initRepository(let path, _):
+            return ["init", "--repository", path.path, "--json"]
         case .backup(let repository, let paths, _):
-            return ["backup", "--repo", repository.path] + paths.map { $0.path }
+            var args = ["backup", "--repository", repository.path, "--json"]
+            args.append(contentsOf: paths.map { $0.path })
+            return args
         case .check(let repository, _):
-            return ["check", "--repo", repository.path]
-        case .snapshots(let repository, _):
-            return ["snapshots", "--repo", repository.path, Constants.Arguments.json]
-        case .scan(let directory):
-            return [directory.path, "-type", "f", "-name", "config"]
+            return ["check", "--repository", repository.path, "--json"]
         case .scanRepository(let repository, _):
-            return ["scan", "--repo", repository.path]
+            return ["snapshots", "--repository", repository.path, "--json"]
         case .listSnapshots(let repository, _):
-            return ["snapshots", "--repo", repository.path]
+            return ["snapshots", "--repository", repository.path, "--json"]
+        case .restore(let repository, let snapshot, let target, _):
+            return ["restore", snapshot, "--repository", repository.path, "--target", target.path, "--json"]
         }
     }
     
@@ -66,15 +54,31 @@ enum ResticCommand {
         switch self {
         case .version:
             return nil
-        case .initialize(_, let password),
+        case .initRepository(_, let password),
              .backup(_, _, let password),
              .check(_, let password),
-             .snapshots(_, let password),
              .scanRepository(_, let password),
-             .listSnapshots(_, let password):
+             .listSnapshots(_, let password),
+             .restore(_, _, _, let password):
             return password
-        case .scan:
-            return nil
+        }
+    }
+    
+    var requiresRepository: Bool {
+        switch self {
+        case .version:
+            return false
+        default:
+            return true
+        }
+    }
+    
+    var requiresPassword: Bool {
+        switch self {
+        case .version:
+            return false
+        default:
+            return true
         }
     }
 }
@@ -82,6 +86,10 @@ enum ResticCommand {
 enum ResticCommandError: LocalizedError {
     case executionFailed(String)
     case invalidOutput(String)
+    case missingPassword
+    case missingRepository
+    case invalidSnapshot
+    case invalidTarget
     
     var errorDescription: String? {
         switch self {
@@ -89,6 +97,14 @@ enum ResticCommandError: LocalizedError {
             return "Command execution failed: \(message)"
         case .invalidOutput(let message):
             return "Invalid command output: \(message)"
+        case .missingPassword:
+            return "Repository password is required"
+        case .missingRepository:
+            return "Repository path is required"
+        case .invalidSnapshot:
+            return "Invalid snapshot ID"
+        case .invalidTarget:
+            return "Invalid restore target path"
         }
     }
 }

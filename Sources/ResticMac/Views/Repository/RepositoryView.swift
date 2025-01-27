@@ -1,139 +1,112 @@
 import SwiftUI
 
 struct RepositoryView: View {
-    @State private var viewModel: RepositoryViewModel?
-    @State private var showingCreateSheet = false
-    @State private var repositoryToDelete: Repository?
+    @StateObject private var viewModel: RepositoryViewModel
+    @State private var showingForm = false
+    @State private var showingError = false
+    @State private var showingDeleteAlert = false
+    @State private var selectedRepository: Repository?
     
-    var body: some View {
-        Group {
-            if let viewModel = viewModel {
-                RepositoryContentView(
-                    viewModel: viewModel,
-                    showingCreateSheet: $showingCreateSheet,
-                    repositoryToDelete: $repositoryToDelete
-                )
-            } else {
-                ProgressView("Loading...")
-                    .onAppear {
-                        Task {
-                            viewModel = await RepositoryViewModel.create()
-                        }
-                    }
-            }
-        }
+    init(resticService: ResticServiceProtocol, commandDisplay: CommandDisplayViewModel) {
+        _viewModel = StateObject(wrappedValue: RepositoryViewModel(resticService: resticService, commandDisplay: commandDisplay))
     }
-}
-
-private struct RepositoryContentView: View {
-    @ObservedObject var viewModel: RepositoryViewModel
-    @Binding var showingCreateSheet: Bool
-    @Binding var repositoryToDelete: Repository?
     
     var body: some View {
-        VStack {
-            if viewModel.repositories.isEmpty {
-                emptyStateView
-            } else {
-                repositoryListView
+        NavigationView {
+            List {
+                if viewModel.repositories.isEmpty {
+                    emptyStateView
+                } else {
+                    repositoryListView
+                }
             }
+            .navigationTitle("Repositories")
         }
-        .sheet(isPresented: $showingCreateSheet) {
+        .toolbar(content: {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: { showingForm = true }) {
+                    Label("Add Repository", systemImage: "plus")
+                }
+            }
+        })
+        .sheet(isPresented: $showingForm) {
             RepositoryForm(viewModel: viewModel)
         }
-        .alert("Error", isPresented: $viewModel.showError) {
+        .alert("Error", isPresented: $showingError) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(viewModel.errorMessage ?? "An unknown error occurred")
+            Text(viewModel.errorMessage)
         }
-        .alert("Delete Repository", isPresented: .init(
-            get: { repositoryToDelete != nil },
-            set: { if !$0 { repositoryToDelete = nil } }
-        )) {
+        .alert("Delete Repository", isPresented: $showingDeleteAlert) {
             Button("Delete", role: .destructive) {
-                if let repository = repositoryToDelete {
+                if let repository = selectedRepository {
                     Task {
-                        await viewModel.removeRepository(repository)
+                        await viewModel.deleteRepository(repository)
                     }
                 }
-                repositoryToDelete = nil
+                selectedRepository = nil
             }
             Button("Cancel", role: .cancel) {
-                repositoryToDelete = nil
+                selectedRepository = nil
             }
         } message: {
-            if let repository = repositoryToDelete {
-                Text("Are you sure you want to delete '\(repository.name)'? This will not delete the repository files.")
-            }
+            Text("Are you sure you want to delete this repository? This action cannot be undone.")
+        }
+        .onChange(of: viewModel.errorMessage) { _, message in
+            showingError = !message.isEmpty
         }
     }
     
     private var emptyStateView: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "folder.badge.plus")
-                .font(.system(size: 48))
-                .foregroundColor(.secondary)
-            
+        VStack {
+            Image(systemName: "folder.badge.questionmark")
+                .resizable()
+                .frame(width: 100, height: 100)
             Text("No Repositories")
-                .font(.title2)
-                .foregroundColor(.secondary)
-            
-            Text("Create a repository to start backing up your files")
-                .foregroundColor(.secondary)
-            
+                .font(.largeTitle)
+            Text("Create a repository to start backing up your files.")
+                .font(.body)
+                .padding(.horizontal)
             Button("Create Repository") {
-                showingCreateSheet = true
+                showingForm = true
             }
             .buttonStyle(.borderedProminent)
         }
-        .padding()
     }
     
     private var repositoryListView: some View {
-        List {
-            ForEach(viewModel.repositories) { repository in
-                repositoryRow(repository)
-            }
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showingCreateSheet = true
-                } label: {
-                    Label("Add Repository", systemImage: "plus")
-                }
-            }
+        ForEach(viewModel.repositories) { repository in
+            repositoryRow(repository)
         }
     }
     
     private func repositoryRow(_ repository: Repository) -> some View {
-        HStack {
-            VStack(alignment: .leading) {
-                Text(repository.name)
-                    .font(.headline)
-                
-                Text(repository.path.path)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                
-                Text("Created: \(repository.createdAt.formatted())")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-            
-            Menu {
-                Button(role: .destructive) {
-                    repositoryToDelete = repository
-                } label: {
-                    Label("Delete", systemImage: "trash")
+        NavigationLink {
+            Text("Repository Details")
+        } label: {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text(repository.name)
+                        .font(.headline)
+                    Text(repository.path.path)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                Menu {
+                    Button(role: .destructive) {
+                        selectedRepository = repository
+                        showingDeleteAlert = true
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundColor(.secondary)
+                }
             }
         }
-        .padding(.vertical, 4)
     }
 }

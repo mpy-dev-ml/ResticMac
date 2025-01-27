@@ -1,147 +1,211 @@
 import Foundation
 import Logging
+import Combine
 
+@MainActor
 protocol ResticServiceProtocol {
     func setCommandDisplay(_ display: CommandDisplayViewModel) async
     func verifyInstallation() async throws
-    func initializeRepository(at path: URL, password: String) async throws -> Repository
-    func executeCommand(_ command: ResticCommand) async throws -> String
+    func initializeRepository(name: String, path: URL, password: String) async throws -> Repository
     func scanForRepositories(in directory: URL) async throws -> [RepositoryScanResult]
-    func listSnapshots(repository: Repository) async throws -> [SnapshotInfo]
+    func checkRepository(repository: Repository) async throws -> RepositoryStatus
+    func createSnapshot(repository: Repository, paths: [URL]) async throws -> Snapshot
+    func listSnapshots(repository: Repository) async throws -> [Snapshot]
+    func restoreSnapshot(repository: Repository, snapshot: String, targetPath: URL) async throws
 }
 
-class ResticService: ResticServiceProtocol {
-    private let logger = Logger(label: Constants.Loggers.resticService)
-    private weak var commandDisplay: CommandDisplayViewModel?
-    private var processExecutor: ProcessExecutor!
+@MainActor
+final class ResticService: ResticServiceProtocol, ObservableObject {
+    private let logger = Logger(label: "com.resticmac.ResticService")
+    private let executor: ProcessExecutor
+    private var commandDisplay: CommandDisplayViewModel?
     
-    init() {
-        self.processExecutor = ProcessExecutor()
+    init(executor: ProcessExecutor = ProcessExecutor(), commandDisplay: CommandDisplayViewModel? = nil) {
+        self.executor = executor
+        self.commandDisplay = commandDisplay
     }
     
     func setCommandDisplay(_ display: CommandDisplayViewModel) async {
         self.commandDisplay = display
-        self.processExecutor = ProcessExecutor(outputHandler: CommandOutputHandler(displayViewModel: display))
+        executor.outputHandler = CommandOutputHandler(displayViewModel: display)
     }
     
     func verifyInstallation() async throws {
-        do {
-            let command = ResticCommand.version
-            _ = try await executeCommand(command)
-        } catch {
+        let result = try await executor.execute(
+            command: "which",
+            arguments: ["restic"]
+        )
+        guard result.isSuccess else {
             throw ResticError.notInstalled
         }
     }
     
-    func initializeRepository(at path: URL, password: String) async throws -> Repository {
-        let repository = Repository(name: path.lastPathComponent, path: path)
+    func initializeRepository(name: String, path: URL, password: String) async throws -> Repository {
+        try await verifyInstallation()
         
-        // Initialize repository
-        let command = ResticCommand.initialize(repository: path, password: password)
-        _ = try await executeCommand(command)
-        
-        // Store password securely
-        try repository.storePassword(password)
-        
-        logger.info("Repository initialised at \(path.path)")
-        await commandDisplay?.completeCommand()
-        return repository
-    }
-    
-    func executeCommand(_ command: ResticCommand) async throws -> String {
-        logger.debug("Executing command: \(command.displayCommand)")
-        
-        var environment: [String: String] = [:]
-        if let password = command.password {
-            environment[Constants.Environment.resticPassword] = password
-        }
-        
-        await commandDisplay?.displayCommand(command)
+        let command = ResticCommand.initRepository(at: path, password: password)
+        await commandDisplay?.start()
         
         do {
-            let result: ProcessResult
+            _ = try await executeCommand(command)
             
-            // Special handling for find command
-            if case .scan = command {
-                result = try await processExecutor.execute(
-                    command: Constants.Commands.find,
-                    arguments: command.arguments,
-                    environment: environment
-                )
-            } else {
-                result = try await processExecutor.execute(
-                    command: Constants.Commands.restic,
-                    arguments: command.arguments,
-                    environment: environment
-                )
-            }
+            logger.info("Repository initialised at \(path.path)")
+            let repository = Repository(name: name, path: path)
+            await commandDisplay?.complete()
+            return repository
             
-            if !result.isSuccess {
-                throw ResticError.commandFailed(code: result.exitCode, message: result.error)
-            }
-            
-            return result.output
-            
-        } catch let error as ProcessError {
-            logger.error("Command failed: \(error.localizedDescription)")
-            await commandDisplay?.appendOutput("Error: \(error.localizedDescription)\n")
-            throw ResticError.commandFailed(code: -1, message: error.localizedDescription)
         } catch {
-            logger.error("Command failed: \(error.localizedDescription)")
-            await commandDisplay?.appendOutput("Error: \(error.localizedDescription)\n")
-            throw ResticError.commandFailed(code: -1, message: error.localizedDescription)
+            logger.error("Failed to initialize repository: \(error.localizedDescription)")
+            throw ResticError.initializationFailed(error)
         }
     }
     
     func scanForRepositories(in directory: URL) async throws -> [RepositoryScanResult] {
-        logger.info("Scanning for repositories in \(directory.path)")
+        try await verifyInstallation()
         
-        // Find all potential repository config files
-        let command = ResticCommand.scan(directory: directory)
-        let output = try await executeCommand(command)
+        let command = ResticCommand.scanRepository(repository: directory, password: "")
         
-        // Process each found config file
-        var results: [RepositoryScanResult] = []
-        let configPaths = output.split(separator: "\n").map(String.init)
-        
-        for configPath in configPaths {
-            let repoPath = (configPath as NSString).deletingLastPathComponent
-            let repoURL = URL(fileURLWithPath: repoPath)
-            var result = RepositoryScanResult(path: repoURL)
-            
-            do {
-                // Try to list snapshots to verify repository
-                let checkCommand = ResticCommand.check(repository: repoURL, password: "")
-                _ = try await executeCommand(checkCommand)
-                result.isValid = true
-                
-                // If valid, try to get snapshots
-                let repository = Repository(name: repoURL.lastPathComponent, path: repoURL)
-                result.snapshots = try await listSnapshots(repository: repository)
-            } catch {
-                logger.warning("Repository at \(repoPath) is invalid or inaccessible")
-            }
-            
-            results.append(result)
+        do {
+            let output = try await executeCommand(command)
+            return try parseRepositoryScanResults(from: output)
+        } catch {
+            logger.error("Failed to scan for repositories: \(error.localizedDescription)")
+            throw error
         }
-        
-        return results
     }
     
-    func listSnapshots(repository: Repository) async throws -> [SnapshotInfo] {
+    func checkRepository(repository: Repository) async throws -> RepositoryStatus {
+        try await verifyInstallation()
+        
         guard let password = try? repository.retrievePassword() else {
             throw ResticError.passwordNotFound
         }
         
-        let command = ResticCommand.snapshots(repository: repository.path, password: password)
-        let output = try await executeCommand(command)
+        let command = ResticCommand.check(repository: repository.path, password: password)
         
+        do {
+            let output = try await executeCommand(command)
+            return try parseRepositoryStatus(from: output)
+        } catch {
+            logger.error("Failed to check repository: \(error.localizedDescription)")
+            throw ResticError.checkFailed(error)
+        }
+    }
+    
+    func createSnapshot(repository: Repository, paths: [URL]) async throws -> Snapshot {
+        try await verifyInstallation()
+        
+        guard let password = try? repository.retrievePassword() else {
+            throw ResticError.passwordNotFound
+        }
+        
+        let command = ResticCommand.backup(repository: repository.path, paths: paths, password: password)
+        await commandDisplay?.start()
+        
+        do {
+            let output = try await executeCommand(command)
+            let snapshot = try parseSnapshotResult(from: output)
+            await commandDisplay?.complete()
+            return snapshot
+        } catch {
+            logger.error("Failed to create snapshot: \(error.localizedDescription)")
+            throw ResticError.backupFailed(error)
+        }
+    }
+    
+    func listSnapshots(repository: Repository) async throws -> [Snapshot] {
+        try await verifyInstallation()
+        
+        guard let password = try? repository.retrievePassword() else {
+            throw ResticError.passwordNotFound
+        }
+        
+        let command = ResticCommand.listSnapshots(repository: repository.path, password: password)
+        
+        do {
+            let output = try await executeCommand(command)
+            return try parseSnapshotList(from: output)
+        } catch {
+            logger.error("Failed to list snapshots: \(error.localizedDescription)")
+            throw ResticError.commandFailed(code: -1, message: error.localizedDescription)
+        }
+    }
+    
+    func restoreSnapshot(repository: Repository, snapshot: String, targetPath: URL) async throws {
+        try await verifyInstallation()
+        
+        guard let password = try? repository.retrievePassword() else {
+            throw ResticError.passwordNotFound
+        }
+        
+        let command = ResticCommand.restore(repository: repository.path, snapshot: snapshot, target: targetPath, password: password)
+        await commandDisplay?.start()
+        
+        do {
+            _ = try await executeCommand(command)
+            await commandDisplay?.complete()
+        } catch {
+            logger.error("Failed to restore snapshot: \(error.localizedDescription)")
+            throw ResticError.restoreFailed(error)
+        }
+    }
+    
+    // MARK: - Private Methods
+    
+    private func executeCommand(_ command: ResticCommand) async throws -> String {
+        logger.info("Executing command: \(command.displayCommand)")
+        
+        var environment: [String: String] = [:]
+        if let password = command.password {
+            environment["RESTIC_PASSWORD"] = password
+        }
+        
+        let result = try await executor.execute(
+            command: "restic",
+            arguments: command.arguments,
+            environment: environment
+        )
+        
+        if !result.isSuccess {
+            throw ResticError.commandFailed(code: Int(result.exitCode), message: result.error)
+        }
+        
+        return result.output
+    }
+    
+    private func parseRepositoryScanResults(from output: String) throws -> [RepositoryScanResult] {
         guard let data = output.data(using: .utf8) else {
-            throw ResticError.invalidOutput
+            throw ResticError.invalidOutput("Could not convert output to data")
         }
         
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode([SnapshotInfo].self, from: data)
+        return try decoder.decode([RepositoryScanResult].self, from: data)
+    }
+    
+    private func parseRepositoryStatus(from output: String) throws -> RepositoryStatus {
+        guard let data = output.data(using: .utf8) else {
+            throw ResticError.invalidOutput("Could not convert output to data")
+        }
+        
+        let decoder = JSONDecoder()
+        return try decoder.decode(RepositoryStatus.self, from: data)
+    }
+    
+    private func parseSnapshotResult(from output: String) throws -> Snapshot {
+        guard let data = output.data(using: .utf8) else {
+            throw ResticError.invalidOutput("Could not convert output to data")
+        }
+        
+        let decoder = JSONDecoder()
+        return try decoder.decode(Snapshot.self, from: data)
+    }
+    
+    private func parseSnapshotList(from output: String) throws -> [Snapshot] {
+        guard let data = output.data(using: .utf8) else {
+            throw ResticError.invalidOutput("Could not convert output to data")
+        }
+        
+        let decoder = JSONDecoder()
+        return try decoder.decode([Snapshot].self, from: data)
     }
 }

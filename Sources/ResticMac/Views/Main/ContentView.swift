@@ -3,13 +3,41 @@ import SwiftUI
 struct ContentView: View {
     @State private var selectedTab: Tab = .repository
     @State private var showWelcomeSheet = !UserDefaults.standard.bool(forKey: "hasSeenWelcome")
-    @State private var resticService = ResticService()
+    @StateObject private var commandDisplay = CommandDisplayViewModel()
+    @StateObject private var resticService: ResticService
     
-    enum Tab {
+    init() {
+        let executor = ProcessExecutor()
+        let commandDisplay = CommandDisplayViewModel()
+        let service = ResticService(executor: executor, commandDisplay: commandDisplay)
+        _resticService = StateObject(wrappedValue: service)
+    }
+    
+    enum Tab: String, CaseIterable, Identifiable {
         case repository
         case backup
         case schedule
         case scan
+        
+        var id: String { rawValue }
+        
+        var title: String {
+            switch self {
+            case .repository: return "Repository"
+            case .backup: return "Backup"
+            case .schedule: return "Schedule"
+            case .scan: return "Scanner"
+            }
+        }
+        
+        var icon: String {
+            switch self {
+            case .repository: return "folder.fill"
+            case .backup: return "arrow.clockwise"
+            case .schedule: return "calendar"
+            case .scan: return "magnifyingglass"
+            }
+        }
     }
     
     var body: some View {
@@ -17,7 +45,7 @@ struct ContentView: View {
             Sidebar(selection: $selectedTab)
         } detail: {
             TabView(selection: $selectedTab) {
-                RepositoryView()
+                RepositoryView(resticService: resticService, commandDisplay: commandDisplay)
                     .tag(Tab.repository)
                 
                 ComingSoonView(title: "Backup", message: "Backup functionality coming soon")
@@ -46,20 +74,9 @@ struct Sidebar: View {
     
     var body: some View {
         List(selection: $selection) {
-            NavigationLink(value: ContentView.Tab.repository) {
-                Label("Repository", systemImage: "folder.fill")
-            }
-            
-            NavigationLink(value: ContentView.Tab.backup) {
-                Label("Backup", systemImage: "arrow.clockwise")
-            }
-            
-            NavigationLink(value: ContentView.Tab.schedule) {
-                Label("Schedule", systemImage: "calendar")
-            }
-            
-            NavigationLink(value: ContentView.Tab.scan) {
-                Label("Scanner", systemImage: "magnifyingglass")
+            ForEach(ContentView.Tab.allCases) { tab in
+                Label(tab.title, systemImage: tab.icon)
+                    .tag(tab)
             }
         }
         .navigationTitle("ResticMac")

@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import OSLog
+import Logging
 
 /// Result type for process execution
 struct ProcessResult {
@@ -33,14 +34,15 @@ enum ProcessError: LocalizedError {
 
 /// Protocol for process execution output handling
 protocol ProcessOutputHandler {
-    func handleOutput(_ line: String)
-    func handleError(_ line: String)
+    func handleOutput(_ line: String) async
+    func handleError(_ line: String) async
+    func handleComplete(_ exitCode: Int32) async
 }
 
 /// Utility class for executing shell commands
 final class ProcessExecutor {
-    private let logger = Logger(label: "com.resticmac.ProcessExecutor")
-    private var outputHandler: ProcessOutputHandler?
+    private let logger = Logger(subsystem: "com.resticmac", category: "ProcessExecutor")
+    internal var outputHandler: ProcessOutputHandler?
     
     init(outputHandler: ProcessOutputHandler? = nil) {
         self.outputHandler = outputHandler
@@ -85,32 +87,40 @@ final class ProcessExecutor {
             try await withCheckedThrowingContinuation { continuation in
                 do {
                     // Handle standard output
-                    outputPipe.fileHandleForReading.readabilityHandler = { handle in
+                    outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
                         let data = handle.availableData
                         outputData.append(data)
                         
                         if let str = String(data: data, encoding: .utf8) {
-                            self.outputHandler?.handleOutput(str)
+                            Task {
+                                await self?.outputHandler?.handleOutput(str)
+                            }
                         }
                     }
                     
                     // Handle standard error
-                    errorPipe.fileHandleForReading.readabilityHandler = { handle in
+                    errorPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
                         let data = handle.availableData
                         errorData.append(data)
                         
                         if let str = String(data: data, encoding: .utf8) {
-                            self.outputHandler?.handleError(str)
+                            Task {
+                                await self?.outputHandler?.handleError(str)
+                            }
                         }
                     }
                     
                     // Process termination handler
-                    process.terminationHandler = { process in
+                    process.terminationHandler = { [weak self] process in
                         outputPipe.fileHandleForReading.readabilityHandler = nil
                         errorPipe.fileHandleForReading.readabilityHandler = nil
                         
                         let output = String(data: outputData, encoding: .utf8) ?? ""
                         let error = String(data: errorData, encoding: .utf8) ?? ""
+                        
+                        Task {
+                            await self?.outputHandler?.handleComplete(process.terminationStatus)
+                        }
                         
                         if process.terminationStatus != Constants.ExitCodes.success {
                             continuation.resume(throwing: ProcessError.executionFailed(

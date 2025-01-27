@@ -104,8 +104,17 @@ struct RepositoryForm: View {
     private func createRepository() {
         guard let path = path else { return }
         Task {
-            await viewModel.createRepository(path: path, name: name, password: password)
-            dismiss()
+            do {
+                try await viewModel.createRepository(
+                    name: name,
+                    path: path,
+                    password: password
+                )
+                dismiss()
+            } catch {
+                // Handle error
+                viewModel.errorMessage = error.localizedDescription
+            }
         }
     }
 }
