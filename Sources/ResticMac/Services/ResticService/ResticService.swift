@@ -42,9 +42,66 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
     }
     
     func initializeRepository(name: String, path: URL, password: String) async throws -> Repository {
-        let command = ResticCommand.initialize(repository: path, password: password)
-        _ = try await executeCommand(command)
-        return Repository(name: name, path: path)
+        // Validate inputs
+        var validationErrors: [String] = []
+        
+        // Validate name
+        if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            validationErrors.append("Repository name cannot be empty")
+        }
+        
+        // Validate path
+        let fileManager = FileManager.default
+        var isDirectory: ObjCBool = false
+        
+        if !fileManager.fileExists(atPath: path.path, isDirectory: &isDirectory) {
+            do {
+                try fileManager.createDirectory(at: path, withIntermediateDirectories: true)
+            } catch {
+                validationErrors.append("Failed to create repository directory: \(error.localizedDescription)")
+            }
+        } else if !isDirectory.boolValue {
+            validationErrors.append("Repository path must be a directory")
+        }
+        
+        // Check write permissions
+        if !fileManager.isWritableFile(atPath: path.path) {
+            validationErrors.append("Repository directory is not writable")
+        }
+        
+        // Validate password
+        if password.count < 8 {
+            validationErrors.append("Password must be at least 8 characters long")
+        }
+        
+        // Check for existing repository
+        if fileManager.fileExists(atPath: path.appendingPathComponent("config").path) {
+            validationErrors.append("A repository already exists at this location")
+        }
+        
+        if !validationErrors.isEmpty {
+            throw ResticError.repositoryInvalid(validationErrors)
+        }
+        
+        // Create repository
+        do {
+            let command = ResticCommand.initialize(repository: path, password: password)
+            _ = try await executeCommand(command)
+            
+            // Create and store repository
+            let repository = Repository(name: name, path: path)
+            try repository.storePassword(password)
+            
+            AppLogger.info("Successfully initialized repository at \(path.path)", category: .repository)
+            return repository
+            
+        } catch let error as ProcessError {
+            AppLogger.error("Failed to initialize repository: \(error.localizedDescription)", category: .repository)
+            throw ResticError.initializationFailed(error.localizedDescription)
+        } catch {
+            AppLogger.error("Unexpected error during repository initialization: \(error.localizedDescription)", category: .repository)
+            throw ResticError.unknown(error.localizedDescription)
+        }
     }
     
     func scanForRepositories(in directory: URL) async throws -> [RepositoryScanResult] {

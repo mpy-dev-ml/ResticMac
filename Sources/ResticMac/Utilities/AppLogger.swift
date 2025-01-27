@@ -6,6 +6,7 @@ enum LogCategory {
     case network
     case ui
     case process
+    case repository
     
     var logger: Logger {
         switch self {
@@ -17,6 +18,8 @@ enum LogCategory {
             return Logger(subsystem: "com.resticmac", category: "ui")
         case .process:
             return Logger(subsystem: "com.resticmac", category: "process")
+        case .repository:
+            return Logger(subsystem: "com.resticmac", category: "repository")
         }
     }
 }
