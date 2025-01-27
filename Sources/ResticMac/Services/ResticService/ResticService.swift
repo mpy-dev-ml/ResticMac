@@ -44,14 +44,13 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
         try await verifyInstallation()
         
         let command = ResticCommand.initRepository(at: path, password: password)
-        await commandDisplay?.start()
+        commandDisplay?.start()
         
         do {
             _ = try await executeCommand(command)
-            
             logger.info("Repository initialised at \(path.path)")
             let repository = Repository(name: name, path: path)
-            await commandDisplay?.complete()
+            commandDisplay?.complete()
             return repository
             
         } catch {
@@ -100,12 +99,12 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
         }
         
         let command = ResticCommand.backup(repository: repository.path, paths: paths, password: password)
-        await commandDisplay?.start()
+        commandDisplay?.start()
         
         do {
             let output = try await executeCommand(command)
             let snapshot = try parseSnapshotResult(from: output)
-            await commandDisplay?.complete()
+            commandDisplay?.complete()
             return snapshot
         } catch {
             logger.error("Failed to create snapshot: \(error.localizedDescription)")
@@ -139,11 +138,11 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
         }
         
         let command = ResticCommand.restore(repository: repository.path, snapshot: snapshot, target: targetPath, password: password)
-        await commandDisplay?.start()
+        commandDisplay?.start()
         
         do {
             _ = try await executeCommand(command)
-            await commandDisplay?.complete()
+            commandDisplay?.complete()
         } catch {
             logger.error("Failed to restore snapshot: \(error.localizedDescription)")
             throw ResticError.restoreFailed(error)

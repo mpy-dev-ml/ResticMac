@@ -33,7 +33,7 @@ final class RepositoryViewModel: ObservableObject {
         let results = try await resticService.scanForRepositories(in: directory)
         repositories = results.compactMap { result in
             guard result.isValid else { return nil }
-            return try? Repository(name: result.path.lastPathComponent, path: result.path)
+            return Repository(name: result.path.lastPathComponent, path: result.path)
         }
     }
     

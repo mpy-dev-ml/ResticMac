@@ -24,10 +24,9 @@ struct CommandDisplayView: View {
                 }
             }
             
-            if let error = viewModel.error {
-                Text(error.localizedDescription)
+            if viewModel.hasError {
+                Text(viewModel.errorMessage)
                     .foregroundColor(.red)
-                    .padding()
             }
             
             Button("Close") {

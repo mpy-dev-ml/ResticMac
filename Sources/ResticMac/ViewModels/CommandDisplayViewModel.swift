@@ -1,33 +1,36 @@
 import Foundation
-import SwiftUI
 
+@MainActor
 final class CommandDisplayViewModel: ObservableObject {
     @Published var output: String = ""
-    @Published var progress: Double = 0.0
+    @Published var progress: Double = 0
     @Published var isRunning: Bool = false
-    @Published var error: Error?
+    @Published var hasError: Bool = false
+    @Published var errorMessage: String = ""
     
-    func appendOutput(_ line: String) {
-        output += line + "\n"
+    func start() {
+        output = ""
+        progress = 0
+        isRunning = true
+        hasError = false
+        errorMessage = ""
+    }
+    
+    func appendOutput(_ text: String) {
+        output += text + "\n"
     }
     
     func updateProgress(_ value: Double) {
         progress = value
     }
     
-    func handleError(_ error: Error) {
-        self.error = error
+    func complete() {
         isRunning = false
     }
     
-    func start() {
-        isRunning = true
-        progress = 0.0
-        output = ""
-        error = nil
-    }
-    
-    func complete() {
+    func handleError(_ error: Error) {
+        hasError = true
+        errorMessage = error.localizedDescription
         isRunning = false
     }
 }

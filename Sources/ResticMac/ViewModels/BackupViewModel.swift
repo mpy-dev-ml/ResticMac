@@ -27,7 +27,7 @@ final class BackupViewModel: ObservableObject {
             // Convert scan results to repositories
             repositories = results.compactMap { result in
                 guard result.isValid else { return nil }
-                return try? Repository(name: result.path.lastPathComponent, path: result.path)
+                return Repository(name: result.path.lastPathComponent, path: result.path)
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -44,7 +44,13 @@ final class BackupViewModel: ObservableObject {
             throw BackupError.noPathsSelected
         }
         
-        try await resticService.createSnapshot(repository: repository, paths: selectedPaths)
+        do {
+            _ = try await resticService.createSnapshot(repository: repository, paths: selectedPaths)
+            // TODO: Handle successful snapshot creation
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
+        }
     }
     
     func addPath(_ url: URL) {

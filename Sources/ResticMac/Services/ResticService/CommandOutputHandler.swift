@@ -1,6 +1,5 @@
 import Foundation
 import Logging
-import ResticMac // Add import for ResticError
 
 // MARK: - Output Format Protocol
 
