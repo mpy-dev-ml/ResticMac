@@ -8,6 +8,16 @@ final class RepositoryViewModel: ObservableObject {
     @Published var isCreatingRepository = false
     @Published var showError = false
     @Published var errorMessage = ""
+    @Published var validationState = RepositoryValidationState()
+    
+    struct RepositoryValidationState {
+        var isNameValid = true
+        var isPathValid = true
+        var isPasswordValid = true
+        var nameError = ""
+        var pathError = ""
+        var passwordError = ""
+    }
     
     private let resticService: ResticServiceProtocol
     private let commandDisplay: CommandDisplayViewModel
@@ -77,46 +87,78 @@ final class RepositoryViewModel: ObservableObject {
         }
     }
     
-    func createRepository(name: String, path: URL, password: String) async throws {
-        print("Starting repository creation process")
-        print("Name: \(name)")
-        print("Path: \(path)")
-        print("Password length: \(password.count)")
+    func createRepository(name: String, path: URL, password: String) async {
+        guard !isCreatingRepository else { return }
         
         isCreatingRepository = true
-        defer { isCreatingRepository = false }
+        validationState = RepositoryValidationState()
         
         do {
-            print("Initializing repository...")
+            // Validate inputs before proceeding
+            var hasError = false
+            
+            // Validate name
+            if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                validationState.isNameValid = false
+                validationState.nameError = "Please enter a repository name"
+                hasError = true
+            }
+            
+            // Validate path
+            if !validatePath(path) {
+                validationState.isPathValid = false
+                validationState.pathError = "Please select a valid directory"
+                hasError = true
+            }
+            
+            // Validate password
+            if !validatePassword(password) {
+                validationState.isPasswordValid = false
+                validationState.passwordError = "Password must meet security requirements"
+                hasError = true
+            }
+            
+            if hasError {
+                isCreatingRepository = false
+                return
+            }
+            
+            // Create repository
             let repository = try await resticService.initializeRepository(
                 name: name,
                 path: path,
                 password: password
             )
-            print("Repository initialized")
+            
+            // Add to repositories list
             repositories.append(repository)
             
-            print("Verifying repository...")
-            try await checkRepository(repository)
-            print("Repository verified successfully")
+            // Reset state
+            isCreatingRepository = false
+            showError = false
+            errorMessage = ""
             
         } catch let error as ResticError {
-            print("Repository creation failed with ResticError: \(error)")
-            switch error {
-            case .repositoryInvalid(let errors):
-                throw NSError(
-                    domain: "ResticMac",
-                    code: 1,
-                    userInfo: [
-                        NSLocalizedDescriptionKey: errors.joined(separator: "\n")
-                    ]
-                )
-            default:
-                throw error
-            }
+            handleResticError(error)
         } catch {
-            print("Repository creation failed with error: \(error)")
-            throw error
+            showError = true
+            errorMessage = "An unexpected error occurred: \(error.localizedDescription)"
+        }
+        
+        isCreatingRepository = false
+    }
+    
+    private func handleResticError(_ error: ResticError) {
+        showError = true
+        switch error {
+        case .notInstalled:
+            errorMessage = "Restic is not installed. Please install Restic and try again."
+        case .validationFailed(let errors):
+            errorMessage = errors.joined(separator: "\n")
+        case .initializationFailed(let underlying):
+            errorMessage = "Failed to initialise repository: \(underlying.localizedDescription)"
+        default:
+            errorMessage = "An error occurred: \(error.localizedDescription)"
         }
     }
     
