@@ -22,8 +22,28 @@ struct JSONOutputFormat: OutputFormat {
     }
     
     func parseOutput(_ line: String) -> CommandOutput {
-        // Implement parsing logic here
-        // For now, just return a default output
+        guard let data = line.data(using: .utf8) else {
+            return CommandOutput(type: .unknown, message: line)
+        }
+        
+        do {
+            // Try to parse as JSON
+            if let _ = try? JSONSerialization.jsonObject(with: data, options: []) {
+                return CommandOutput(type: .unknown, message: line)
+            }
+        }
+        
+        // Check for specific error patterns
+        if line.contains("error:") || line.contains("Fatal:") {
+            return CommandOutput(type: .unknown, message: line)
+        }
+        
+        // Progress indicators
+        if line.contains("[") && line.contains("]") && line.contains("%") {
+            return CommandOutput(type: .unknown, message: line)
+        }
+        
+        // Default to text output
         return CommandOutput(type: .unknown, message: line)
     }
 }
@@ -66,6 +86,9 @@ struct CommandOutput {
         case progress(Double)
         case summary
         case unknown
+        case text
+        case json
+        case error
     }
     
     let type: OutputType

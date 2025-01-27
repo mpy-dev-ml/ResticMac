@@ -1,6 +1,6 @@
 import Foundation
 
-struct Snapshot: Codable {
+struct Snapshot: Codable, Identifiable {
     let id: String
     let time: Date
     let paths: [String]

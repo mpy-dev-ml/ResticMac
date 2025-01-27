@@ -9,6 +9,7 @@ final class RepositoryViewModel: ObservableObject {
     @Published var showError = false
     @Published var errorMessage = ""
     @Published var validationState = RepositoryValidationState()
+    @Published var selectedRepository: Repository?
     
     struct RepositoryValidationState {
         var isNameValid = true
@@ -61,30 +62,42 @@ final class RepositoryViewModel: ObservableObject {
         return hasMinLength && criteriaCount >= 3
     }
     
-    func scanForRepositories(in directory: URL) async {
+    @MainActor
+    func scanForRepositories() async {
         isLoading = true
         defer { isLoading = false }
         
         do {
-            let results = try await resticService.scanForRepositories(in: directory)
-            repositories = results.compactMap { result in
-                guard result.isValid else { return nil }
-                return Repository(name: result.path.lastPathComponent, path: result.path)
+            // Use the user's Documents folder as the default scan location
+            let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            let results = try await resticService.scanForRepositories(in: documentsURL)
+            await MainActor.run {
+                self.repositories = results.compactMap { result -> Repository? in
+                    guard result.isValid else { return nil }
+                    var repo = Repository(name: result.path.lastPathComponent, path: result.path)
+                    repo.lastChecked = Date()
+                    return repo
+                }
             }
         } catch {
-            errorMessage = "Failed to scan for repositories: \(error.localizedDescription)"
-            showError = true
+            await MainActor.run {
+                self.errorMessage = "Failed to scan for repositories: \(error.localizedDescription)"
+                self.showError = true
+            }
         }
     }
     
-    func checkRepository(_ repository: Repository) async throws {
-        isLoading = true
-        defer { isLoading = false }
-        
+    func checkRepository(_ repository: Repository) async throws -> RepositoryStatus {
         let status = try await resticService.checkRepository(repository: repository)
-        if !status.isValid {
-            throw ResticError.repositoryInvalid(status.errors)
+        if status.isValid {
+            // Update repository status
+            if let index = repositories.firstIndex(where: { $0.id == repository.id }) {
+                var updatedRepo = repositories[index]
+                updatedRepo.lastChecked = Date()
+                repositories[index] = updatedRepo
+            }
         }
+        return status
     }
     
     func createRepository(name: String, path: URL, password: String) async {
@@ -176,5 +189,13 @@ final class RepositoryViewModel: ObservableObject {
         // For now, we just remove it from our list
         // In the future, we might want to actually delete the repository files
         repositories.removeAll { $0.path == repository.path }
+    }
+    
+    func listSnapshots(for repository: Repository) async throws -> [Snapshot] {
+        return try await resticService.listSnapshots(repository: repository)
+    }
+    
+    func createSnapshot(repository: Repository, paths: [URL]) async throws -> Snapshot {
+        return try await resticService.createSnapshot(repository: repository, paths: paths)
     }
 }

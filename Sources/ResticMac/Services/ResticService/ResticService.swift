@@ -85,12 +85,14 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
             _ = try await executeCommand(command)
             
             // Create and return repository
+            let now = Date()
             let repository = Repository(
                 id: UUID(),
                 name: trimmedName,
                 path: path,
-                createdAt: Date(),
-                lastBackup: nil
+                createdAt: now,
+                lastBackup: nil,
+                lastChecked: now
             )
             
             // Store password securely
@@ -107,8 +109,67 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
     }
     
     func scanForRepositories(in directory: URL) async throws -> [RepositoryScanResult] {
-        // Implementation for scanning repositories
-        return []
+        AppLogger.info("Scanning for repositories in \(directory.path)", category: .repository)
+        await displayViewModel?.appendCommand("Scanning for repositories...")
+        
+        let fileManager = FileManager.default
+        var results: [RepositoryScanResult] = []
+        
+        // Check if the directory itself is a repository
+        if let result = try? await scanSingleDirectory(directory) {
+            results.append(result)
+            AppLogger.info("Found repository at \(directory.path)", category: .repository)
+        }
+        
+        // Get contents of directory
+        guard let enumerator = fileManager.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            AppLogger.warning("Failed to enumerate directory \(directory.path)", category: .repository)
+            return results
+        }
+        
+        // Scan each subdirectory
+        for case let fileURL as URL in enumerator {
+            guard try fileURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else { continue }
+            
+            // Skip if we've already found it as a repository
+            if results.contains(where: { $0.path == fileURL }) { continue }
+            
+            if let result = try? await scanSingleDirectory(fileURL) {
+                results.append(result)
+                AppLogger.info("Found repository at \(fileURL.path)", category: .repository)
+            }
+        }
+        
+        await displayViewModel?.appendOutput("Found \(results.count) repositories")
+        return results
+    }
+    
+    private func scanSingleDirectory(_ url: URL) async throws -> RepositoryScanResult? {
+        // Check for config file
+        let configPath = url.appendingPathComponent("config")
+        guard FileManager.default.fileExists(atPath: configPath.path) else {
+            return nil
+        }
+        
+        // Try to check repository status
+        do {
+            let tempRepo = Repository(name: url.lastPathComponent, path: url)
+            let status = try await checkRepository(repository: tempRepo)
+            let snapshots = try? await listSnapshots(repository: tempRepo)
+            
+            return RepositoryScanResult(
+                path: url,
+                isValid: status.isValid,
+                snapshots: snapshots
+            )
+        } catch {
+            AppLogger.error("Failed to scan repository at \(url.path): \(error.localizedDescription)", category: .repository)
+            return RepositoryScanResult(path: url, isValid: false)
+        }
     }
     
     func checkRepository(repository: Repository) async throws -> RepositoryStatus {
@@ -142,23 +203,19 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
     
     private func executeCommand(_ command: ResticCommand) async throws -> String {
         do {
+            await displayViewModel?.appendCommand("restic \(command.arguments.joined(separator: " "))")
+            
             let result = try await executor.execute(
                 command.executable,
                 arguments: command.arguments,
                 environment: command.environment
             )
+            
+            await displayViewModel?.appendOutput(result.output)
             return result.output
-        } catch let error as ProcessError {
-            switch error {
-            case .executionFailed(let code, let message):
-                throw ResticError.commandFailed(code: Int(code), message: message)
-            case .processStartFailed(let message):
-                throw ResticError.commandExecutionFailed(ProcessError.processStartFailed(message: message))
-            case .timeout:
-                throw ResticError.commandExecutionFailed(error)
-            }
         } catch {
-            throw ResticError.unknown(error.localizedDescription)
+            await displayViewModel?.appendError(error.localizedDescription)
+            throw error
         }
     }
     

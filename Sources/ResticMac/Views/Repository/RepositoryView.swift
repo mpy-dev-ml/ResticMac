@@ -85,35 +85,36 @@ struct RepositoryView: View {
     
     private var repositoryListView: some View {
         ForEach(viewModel.repositories) { repository in
-            repositoryRow(repository)
-        }
-    }
-    
-    private func repositoryRow(_ repository: Repository) -> some View {
-        NavigationLink {
-            Text("Repository Details")
-        } label: {
-            HStack {
-                VStack(alignment: .leading) {
-                    Text(repository.name)
-                        .font(.headline)
-                    Text(repository.path.path)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
-                
-                Menu {
-                    Button(role: .destructive) {
-                        selectedRepository = repository
-                        showingDeleteAlert = true
-                    } label: {
-                        Label("Delete", systemImage: "trash")
+            NavigationLink(destination: RepositoryDetailView(repository: repository, viewModel: viewModel)) {
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(repository.name)
+                            .font(.headline)
+                        Text(repository.path.path)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        if let lastBackup = repository.lastBackup {
+                            Text("Last backup: \(lastBackup.formatted())")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
                     }
+                    
+                    Spacer()
+                    
+                    // Status indicator
+                    Image(systemName: "circle.fill")
+                        .foregroundColor(.green)
+                        .font(.system(size: 8))
+                }
+                .padding(.vertical, 4)
+            }
+            .swipeActions(edge: .trailing) {
+                Button(role: .destructive) {
+                    selectedRepository = repository
+                    showingDeleteAlert = true
                 } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .foregroundColor(.secondary)
+                    Label("Delete", systemImage: "trash")
                 }
             }
         }

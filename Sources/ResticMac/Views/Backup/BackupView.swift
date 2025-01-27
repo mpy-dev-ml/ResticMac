@@ -1,20 +1,78 @@
 import SwiftUI
 
 struct BackupView: View {
-    @StateObject private var viewModel = BackupViewModel(resticService: ResticService())
+    let repository: Repository
+    @ObservedObject var viewModel: RepositoryViewModel
     @State private var showingCommandDisplay = false
     @State private var showingPathPicker = false
+    @State private var selectedPaths: [URL] = []
+    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        VStack {
-            BackupContentView(
-                viewModel: viewModel,
-                showingCommandDisplay: $showingCommandDisplay,
-                showingPathPicker: $showingPathPicker
-            )
-            .task {
-                await viewModel.loadRepositories()
+        NavigationView {
+            VStack(spacing: 20) {
+                // Path Selection
+                List {
+                    ForEach(selectedPaths, id: \.self) { path in
+                        HStack {
+                            Text(path.lastPathComponent)
+                            Spacer()
+                            Button(action: {
+                                selectedPaths.removeAll { $0 == path }
+                            }) {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundColor(.red)
+                            }
+                        }
+                    }
+                    
+                    Button(action: { showingPathPicker = true }) {
+                        Label("Add Path", systemImage: "plus.circle")
+                    }
+                }
+                
+                // Backup Button
+                Button(action: {
+                    Task {
+                        await createBackup()
+                    }
+                }) {
+                    Text("Create Backup")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(selectedPaths.isEmpty)
+                .padding()
             }
+            .navigationTitle("Create Backup")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .fileImporter(
+            isPresented: $showingPathPicker,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: true
+        ) { result in
+            switch result {
+            case .success(let urls):
+                selectedPaths.append(contentsOf: urls)
+            case .failure(let error):
+                print("Failed to select paths: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    private func createBackup() async {
+        do {
+            let _ = try await viewModel.createSnapshot(repository: repository, paths: selectedPaths)
+            dismiss()
+        } catch {
+            print("Failed to create backup: \(error.localizedDescription)")
         }
     }
 }

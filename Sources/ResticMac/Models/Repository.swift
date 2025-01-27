@@ -1,12 +1,13 @@
 import Foundation
 import KeychainAccess
 
-struct Repository: Identifiable, Codable, Hashable {
+struct Repository: Identifiable, Codable, Equatable, Hashable {
     let id: UUID
     let name: String
     let path: URL
     let createdAt: Date
     var lastBackup: Date?
+    var lastChecked: Date?
     
     // Mark keychain as transient since it's not Codable
     private var keychain: Keychain {
@@ -19,14 +20,16 @@ struct Repository: Identifiable, Codable, Hashable {
         self.path = path
         self.createdAt = Date()
         self.lastBackup = nil
+        self.lastChecked = nil
     }
     
-    init(id: UUID = UUID(), name: String, path: URL, createdAt: Date, lastBackup: Date?) {
+    init(id: UUID = UUID(), name: String, path: URL, createdAt: Date, lastBackup: Date?, lastChecked: Date?) {
         self.id = id
         self.name = name
         self.path = path
         self.createdAt = createdAt
         self.lastBackup = lastBackup
+        self.lastChecked = lastChecked
     }
     
     func hash(into hasher: inout Hasher) {
