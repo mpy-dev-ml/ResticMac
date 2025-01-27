@@ -2,11 +2,10 @@ import Foundation
 import Combine
 import os
 
-@MainActor
 protocol ResticServiceProtocol {
     func setCommandDisplay(_ display: CommandDisplayViewModel) async
     func verifyInstallation() async throws
-    func initializeRepository(name: String, path: URL, password: String) async throws -> Repository
+    func initializeRepository(name: String, path: URL) async throws -> Repository
     func scanForRepositories(in directory: URL) async throws -> [RepositoryScanResult]
     func checkRepository(repository: Repository) async throws -> RepositoryStatus
     func createSnapshot(repository: Repository, paths: [URL]) async throws -> Snapshot
@@ -41,69 +40,29 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
         }
     }
     
-    func initializeRepository(name: String, path: URL, password: String) async throws -> Repository {
-        // Validate inputs
-        var validationErrors: [String] = []
-        
-        // Validate name
+    func initializeRepository(name: String, path: URL) async throws -> Repository {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedName.isEmpty {
-            validationErrors.append("Repository name cannot be empty")
+        guard !trimmedName.isEmpty else {
+            throw ResticError.validationFailed(errors: ["Repository name cannot be empty"])
         }
         
-        // Validate path
-        let fileManager = FileManager.default
-        var isDirectory: ObjCBool = false
-        
-        if !fileManager.fileExists(atPath: path.path, isDirectory: &isDirectory) {
-            do {
-                try fileManager.createDirectory(at: path, withIntermediateDirectories: true)
-            } catch {
-                validationErrors.append("Failed to create repository directory: \(error.localizedDescription)")
-            }
-        } else if !isDirectory.boolValue {
-            validationErrors.append("Repository path must be a directory")
-        } else if !fileManager.isWritableFile(atPath: path.path) {
-            validationErrors.append("Repository directory is not writable")
-        }
-        
-        // Validate password
-        if password.count < 8 {
-            validationErrors.append("Password must be at least 8 characters long")
-        }
-        
-        if !validationErrors.isEmpty {
-            throw ResticError.validationFailed(errors: validationErrors)
-        }
-        
-        // Initialize repository
         do {
-            AppLogger.info("Initializing repository at \(path.path)", category: .repository)
-            await displayViewModel?.appendCommand("Initialising repository...")
+            // Check if directory exists
+            if !FileManager.default.fileExists(atPath: path.path) {
+                try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
+            }
             
-            let command = ResticCommand.initialize(repository: path, password: password)
+            // Initialize repository with a temporary password
+            let tempPassword = UUID().uuidString
+            let command = ResticCommand(repository: path, password: tempPassword, operation: .initialize)
             _ = try await executeCommand(command)
             
-            // Create and return repository
-            let now = Date()
-            let repository = Repository(
-                id: UUID(),
-                name: trimmedName,
-                path: path,
-                createdAt: now,
-                lastBackup: nil,
-                lastChecked: now
-            )
-            
-            // Store password securely
-            try repository.storePassword(password)
-            
-            await displayViewModel?.appendOutput("Repository initialised successfully")
-            AppLogger.info("Repository initialized successfully at \(path.path)", category: .repository)
+            // Create repository and store password
+            let repository = Repository(name: trimmedName, path: path)
+            try repository.storePassword(tempPassword)
             
             return repository
         } catch {
-            AppLogger.error("Failed to initialize repository: \(error.localizedDescription)", category: .repository)
             throw ResticError.initializationFailed(underlying: error)
         }
     }
@@ -173,60 +132,122 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
     }
     
     func checkRepository(repository: Repository) async throws -> RepositoryStatus {
-        let command = ResticCommand.check(repository: repository.path, password: try repository.retrievePassword())
+        let command = ResticCommand(
+            repository: repository.path,
+            password: try repository.retrievePassword(),
+            operation: .check
+        )
         _ = try await executeCommand(command)
-        return .ok
+        return RepositoryStatus(state: .ok, errors: [])
     }
     
     func createSnapshot(repository: Repository, paths: [URL]) async throws -> Snapshot {
-        let command = ResticCommand.backup(repository: repository.path, paths: paths, password: try repository.retrievePassword())
+        let command = ResticCommand(
+            repository: repository.path,
+            password: try repository.retrievePassword(),
+            operation: .backup(paths: paths)
+        )
         _ = try await executeCommand(command)
-        return Snapshot(id: UUID().uuidString, time: Date(), paths: paths.map(\.path), hostname: "", username: "", excludes: nil, tags: nil)
+        return Snapshot(
+            id: UUID().uuidString,
+            time: Date(),
+            paths: paths.map(\.path),
+            hostname: ProcessInfo.processInfo.hostName,
+            username: NSUserName(),
+            excludes: [],
+            tags: []
+        )
     }
     
     func listSnapshots(repository: Repository) async throws -> [Snapshot] {
-        let command = ResticCommand.snapshots(repository: repository.path, password: try repository.retrievePassword())
+        let command = ResticCommand(
+            repository: repository.path,
+            password: try repository.retrievePassword(),
+            operation: .snapshots
+        )
         let output = try await executeCommand(command)
         return try parseSnapshotsOutput(output)
     }
     
     func restoreSnapshot(repository: Repository, snapshot: String, targetPath: URL) async throws {
-        let command = ResticCommand.restore(repository: repository.path, snapshot: snapshot, target: targetPath, password: try repository.retrievePassword())
+        let command = ResticCommand(
+            repository: repository.path,
+            password: try repository.retrievePassword(),
+            operation: .restore(snapshot: snapshot, target: targetPath)
+        )
         _ = try await executeCommand(command)
     }
     
     func listSnapshotContents(repository: Repository, snapshot: String, path: String?) async throws -> [SnapshotEntry] {
-        let command = ResticCommand.ls(repository: repository.path, snapshotID: snapshot, password: try repository.retrievePassword())
+        let command = ResticCommand(
+            repository: repository.path,
+            password: try repository.retrievePassword(),
+            operation: .ls(snapshotID: snapshot)
+        )
         let output = try await executeCommand(command)
         return try parseSnapshotContents(output)
     }
     
     private func executeCommand(_ command: ResticCommand) async throws -> String {
-        do {
-            await displayViewModel?.appendCommand("restic \(command.arguments.joined(separator: " "))")
-            
-            let result = try await executor.execute(
-                command.executable,
-                arguments: command.arguments,
-                environment: command.environment
-            )
-            
-            await displayViewModel?.appendOutput(result.output)
-            return result.output
-        } catch {
-            await displayViewModel?.appendError(error.localizedDescription)
-            throw error
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: command.executable)
+        process.arguments = command.arguments
+        process.environment = command.environment
+        
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+        
+        try process.run()
+        
+        let outputData = try await withCheckedThrowingContinuation { continuation in
+            outputPipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                if data.isEmpty {
+                    handle.readabilityHandler = nil
+                    continuation.resume(returning: handle.availableData)
+                }
+            }
         }
+        
+        let errorData = try await withCheckedThrowingContinuation { continuation in
+            errorPipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                if data.isEmpty {
+                    handle.readabilityHandler = nil
+                    continuation.resume(returning: handle.availableData)
+                }
+            }
+        }
+        
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().async {
+                process.waitUntilExit()
+                continuation.resume()
+            }
+        }
+        
+        if process.terminationStatus != 0 {
+            let errorMessage = String(decoding: errorData, as: UTF8.self)
+            throw ResticError.commandFailed(underlying: NSError(
+                domain: "ResticError",
+                code: Int(process.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: errorMessage]
+            ))
+        }
+        
+        return String(decoding: outputData, as: UTF8.self)
     }
     
     private func parseSnapshotsOutput(_ output: String) throws -> [Snapshot] {
-        // Implementation for parsing snapshots output
-        return []
+        // Implementation here
+        []
     }
     
     private func parseSnapshotContents(_ output: String) throws -> [SnapshotEntry] {
-        // Implementation for parsing snapshot contents
-        return []
+        // Implementation here
+        []
     }
     
     deinit {
@@ -237,9 +258,8 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
 struct SnapshotEntry: Identifiable, Codable {
     let id: String
     let type: EntryType
-    let name: String
-    let size: Int64
-    let modTime: Date
+    let path: String
+    let size: Int64?
     
     enum EntryType: String, Codable {
         case file

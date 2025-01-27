@@ -3,7 +3,6 @@ import SwiftUI
 struct RepositoryView: View {
     @StateObject private var viewModel: RepositoryViewModel
     @State private var showingForm = false
-    @State private var showingError = false
     @State private var showingDeleteAlert = false
     @State private var navigationPath = NavigationPath()
     
@@ -13,43 +12,59 @@ struct RepositoryView: View {
     
     var body: some View {
         NavigationStack(path: $navigationPath) {
-            List {
+            ZStack {
                 if viewModel.repositories.isEmpty {
                     emptyStateView
                 } else {
-                    ForEach(viewModel.repositories) { repository in
-                        NavigationLink {
-                            RepositoryDetailView(repository: repository, viewModel: viewModel)
-                                .onAppear {
-                                    viewModel.selectRepository(repository)
-                                }
-                                .onDisappear {
-                                    viewModel.selectRepository(nil)
-                                }
-                        } label: {
-                            RepositoryRowView(repository: repository, isSelected: viewModel.selectedRepositoryId == repository.id)
-                        }
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                viewModel.selectRepository(repository)
-                                showingDeleteAlert = true
+                    List {
+                        ForEach(viewModel.repositories) { repository in
+                            NavigationLink {
+                                RepositoryDetailView(repository: repository, viewModel: viewModel)
                             } label: {
-                                Label("Delete", systemImage: "trash")
+                                RepositoryRowView(
+                                    repository: repository,
+                                    isSelected: viewModel.selectedRepository?.id == repository.id
+                                )
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    withAnimation {
+                                        // Use the repository from our list to ensure we have latest version
+                                        viewModel.selectRepository(repository)
+                                    }
+                                }
+                            }
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    viewModel.selectRepository(repository)
+                                    showingDeleteAlert = true
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
                             }
                         }
+                        .onDelete { indexSet in
+                            guard let index = indexSet.first,
+                                  index < viewModel.repositories.count else { return }
+                            let repository = viewModel.repositories[index]
+                            viewModel.selectRepository(repository)
+                            showingDeleteAlert = true
+                        }
                     }
+                    .listStyle(.inset)
+                    .refreshable {
+                        await viewModel.refreshRepositories()
+                    }
+                }
+                
+                if viewModel.isLoading {
+                    ProgressView()
+                        .scaleEffect(1.2)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(.ultraThinMaterial)
                 }
             }
             .navigationTitle("Repositories")
-            .listStyle(.inset)
-            .refreshable {
-                await viewModel.refreshRepositories()
-            }
-            .overlay {
-                if viewModel.isLoading {
-                    ProgressView()
-                }
-            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button(action: { showingForm = true }) {
@@ -60,11 +75,6 @@ struct RepositoryView: View {
         }
         .sheet(isPresented: $showingForm) {
             RepositoryForm(viewModel: viewModel)
-        }
-        .alert("Error", isPresented: $showingError) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(viewModel.errorMessage)
         }
         .alert("Delete Repository", isPresented: $showingDeleteAlert) {
             Button("Delete", role: .destructive) {
@@ -80,9 +90,6 @@ struct RepositoryView: View {
             }
         } message: {
             Text("Are you sure you want to delete this repository? This action cannot be undone.")
-        }
-        .onChange(of: viewModel.errorMessage) { _, message in
-            showingError = !message.isEmpty
         }
     }
     
@@ -110,7 +117,7 @@ struct RepositoryRowView: View {
     
     var body: some View {
         HStack {
-            VStack(alignment: .leading) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(repository.name)
                     .font(.headline)
                 Text(repository.path.path)
@@ -122,12 +129,14 @@ struct RepositoryRowView: View {
                         .foregroundColor(.secondary)
                 }
             }
+            
             Spacer()
+            
             Image(systemName: "circle.fill")
                 .foregroundColor(.green)
                 .font(.system(size: 8))
                 .opacity(isSelected ? 1 : 0.5)
+                .animation(.easeInOut, value: isSelected)
         }
-        .padding(.vertical, 4)
     }
 }

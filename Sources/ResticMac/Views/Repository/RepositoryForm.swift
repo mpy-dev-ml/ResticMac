@@ -88,13 +88,16 @@ struct RepositoryForm: View {
                     Button("Create Repository") {
                         guard let path = path else { return }
                         Task {
-                            await viewModel.createRepository(
-                                name: name,
-                                path: path,
-                                password: password
-                            )
-                            if !viewModel.showError {
-                                dismiss()
+                            do {
+                                _ = try await viewModel.createRepository(
+                                    name: name,
+                                    path: path
+                                )
+                                if !viewModel.showError {
+                                    dismiss()
+                                }
+                            } catch {
+                                // Error already handled by ViewModel
                             }
                         }
                     }

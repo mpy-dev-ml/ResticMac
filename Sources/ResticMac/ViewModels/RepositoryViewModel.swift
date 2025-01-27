@@ -6,42 +6,237 @@ final class RepositoryViewModel: ObservableObject {
     @Published private(set) var repositories: [Repository] = []
     @Published private(set) var isLoading = false
     @Published var isCreatingRepository = false
+    @Published var selectedRepository: Repository?
     @Published var showError = false
     @Published var errorMessage = ""
     @Published var validationState = RepositoryValidationState()
-    @Published var selectedRepositoryId: UUID?
     
-    var selectedRepository: Repository? {
-        guard let id = selectedRepositoryId else { return nil }
-        return repositories.first { $0.id == id }
+    private let resticService: ResticServiceProtocol
+    private let commandDisplay: CommandDisplayViewModel
+    private var refreshTask: Task<Void, Never>?
+    
+    var hasSelectedRepository: Bool {
+        selectedRepository != nil
     }
     
-    func selectRepository(_ repository: Repository?) {
-        selectedRepositoryId = repository?.id
+    // Dictionary for O(1) lookups
+    private var repositoryMap: [UUID: Repository] {
+        Dictionary(uniqueKeysWithValues: repositories.map { ($0.id, $0) })
     }
     
-    func updateRepository(_ repository: Repository) {
-        if let index = repositories.firstIndex(where: { $0.id == repository.id }) {
-            repositories[index] = repository
-            objectWillChange.send()
+    init(resticService: ResticServiceProtocol, commandDisplay: CommandDisplayViewModel) {
+        self.resticService = resticService
+        self.commandDisplay = commandDisplay
+        Task { 
+            await resticService.setCommandDisplay(commandDisplay)
+            await scanForRepositories()
         }
     }
     
-    func refreshRepository(_ repository: Repository) async throws {
-        // Check repository status
+    func repository(withId id: UUID) -> Repository? {
+        repositoryMap[id]
+    }
+    
+    func selectRepository(_ repository: Repository?) {
+        if let repository = repository {
+            // Ensure we're using the latest version from our repositories array
+            selectedRepository = repositoryMap[repository.id] ?? repository
+        } else {
+            selectedRepository = nil
+        }
+        objectWillChange.send()
+    }
+    
+    @MainActor
+    func refreshRepositories() async {
+        // Cancel any existing refresh task
+        refreshTask?.cancel()
+        
+        // Create new refresh task
+        refreshTask = Task {
+            do {
+                isLoading = true
+                defer { isLoading = false }
+                
+                // Store currently selected repository ID
+                let selectedId = selectedRepository?.id
+                
+                // Scan for repositories
+                let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                let results = try await resticService.scanForRepositories(in: documentsURL)
+                
+                // Only update if task hasn't been cancelled
+                if !Task.isCancelled {
+                    let newRepositories = results.compactMap { result -> Repository? in
+                        guard result.isValid else { return nil }
+                        var repo = Repository(name: result.path.lastPathComponent, path: result.path)
+                        repo.lastChecked = Date()
+                        return repo
+                    }.sorted { $0.name < $1.name }
+                    
+                    withAnimation {
+                        repositories = newRepositories
+                        
+                        // Restore selection if repository still exists
+                        if let id = selectedId,
+                           let repository = repositoryMap[id] {
+                            selectedRepository = repository
+                        }
+                    }
+                }
+            } catch {
+                if !Task.isCancelled {
+                    errorMessage = "Failed to refresh repositories: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        }
+        
+        // Wait for task completion
+        await refreshTask?.value
+    }
+    
+    @MainActor
+    func refreshSelectedRepository() async throws {
+        guard let repository = selectedRepository else { return }
+        
         let status = try await checkRepository(repository)
         if status.isValid {
-            // Load latest snapshots
             let snapshots = try await listSnapshots(repository: repository)
-            
-            // Update repository with latest info
             var updatedRepo = repository
             updatedRepo.lastChecked = Date()
             if let lastSnapshot = snapshots.last {
                 updatedRepo.lastBackup = lastSnapshot.time
             }
-            updateRepository(updatedRepo)
+            
+            withAnimation {
+                updateRepository(updatedRepo)
+                selectedRepository = updatedRepo
+            }
         }
+    }
+    
+    func updateRepository(_ repository: Repository) {
+        withAnimation {
+            if let index = repositories.firstIndex(where: { $0.id == repository.id }) {
+                repositories[index] = repository
+                if selectedRepository?.id == repository.id {
+                    selectedRepository = repository
+                }
+                objectWillChange.send()
+            }
+        }
+    }
+    
+    func deleteRepository(_ repository: Repository) async {
+        // Remove from list first for immediate UI feedback
+        if let index = repositories.firstIndex(where: { $0.id == repository.id }) {
+            repositories.remove(at: index)
+            if selectedRepository?.id == repository.id {
+                selectedRepository = nil
+            }
+        }
+        
+        do {
+            // Then attempt to delete the actual repository
+            try FileManager.default.removeItem(at: repository.path)
+        } catch {
+            self.errorMessage = "Failed to delete repository: \(error.localizedDescription)"
+            self.showError = true
+        }
+        
+        // Always refresh the list to ensure consistency
+        await scanForRepositories()
+    }
+    
+    func scanForRepositories() async {
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            let results = try await resticService.scanForRepositories(in: documentsURL)
+            
+            withAnimation {
+                let newRepositories = results.compactMap { result -> Repository? in
+                    guard result.isValid else { return nil }
+                    var repo = Repository(name: result.path.lastPathComponent, path: result.path)
+                    repo.lastChecked = Date()
+                    return repo
+                }.sorted { $0.name < $1.name }
+                
+                // Update selected repository if it exists in new list
+                if let selected = selectedRepository,
+                   let updated = newRepositories.first(where: { $0.id == selected.id }) {
+                    selectedRepository = updated
+                }
+                
+                repositories = newRepositories
+            }
+        } catch {
+            errorMessage = "Failed to scan for repositories: \(error.localizedDescription)"
+            showError = true
+        }
+    }
+    
+    func checkRepository(_ repository: Repository) async throws -> RepositoryStatus {
+        let status = try await resticService.checkRepository(repository: repository)
+        if status.isValid {
+            // Update repository status
+            if let index = repositories.firstIndex(where: { $0.id == repository.id }) {
+                var updatedRepo = repositories[index]
+                updatedRepo.lastChecked = Date()
+                repositories[index] = updatedRepo
+            }
+        }
+        return status
+    }
+    
+    func createRepository(name: String, path: URL) async throws -> Repository {
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            let repository = try await resticService.initializeRepository(
+                name: name,
+                path: path
+            )
+            
+            withAnimation {
+                repositories.append(repository)
+                repositories.sort { $0.name < $1.name }
+            }
+            
+            return repository
+        } catch {
+            errorMessage = "Failed to create repository: \(error.localizedDescription)"
+            showError = true
+            throw error
+        }
+    }
+    
+    func removeRepository(_ repository: Repository) async {
+        do {
+            try repository.removePassword()
+            repositories.removeAll { $0.id == repository.id }
+        } catch {
+            errorMessage = "Failed to remove repository: \(error.localizedDescription)"
+            showError = true
+        }
+    }
+    
+    func listSnapshots(repository: Repository) async throws -> [Snapshot] {
+        do {
+            return try await resticService.listSnapshots(repository: repository)
+        } catch {
+            self.errorMessage = "Failed to list snapshots: \(error.localizedDescription)"
+            self.showError = true
+            throw error
+        }
+    }
+    
+    func createSnapshot(repository: Repository, paths: [URL]) async throws -> Snapshot {
+        return try await resticService.createSnapshot(repository: repository, paths: paths)
     }
     
     struct RepositoryValidationState {
@@ -51,18 +246,6 @@ final class RepositoryViewModel: ObservableObject {
         var nameError = ""
         var pathError = ""
         var passwordError = ""
-    }
-    
-    private let resticService: ResticServiceProtocol
-    private let commandDisplay: CommandDisplayViewModel
-    
-    init(resticService: ResticServiceProtocol, commandDisplay: CommandDisplayViewModel) {
-        self.resticService = resticService
-        self.commandDisplay = commandDisplay
-        Task { 
-            await resticService.setCommandDisplay(commandDisplay)
-            await scanForRepositories()
-        }
     }
     
     func validatePath(_ path: URL) -> Bool {
@@ -96,165 +279,5 @@ final class RepositoryViewModel: ObservableObject {
             .count
             
         return hasMinLength && criteriaCount >= 3
-    }
-    
-    @MainActor
-    func scanForRepositories() async {
-        isLoading = true
-        defer { isLoading = false }
-        
-        do {
-            let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            let results = try await resticService.scanForRepositories(in: documentsURL)
-            
-            // Update on main actor to ensure UI updates
-            self.repositories = results.compactMap { result -> Repository? in
-                guard result.isValid else { return nil }
-                var repo = Repository(name: result.path.lastPathComponent, path: result.path)
-                repo.lastChecked = Date()
-                return repo
-            }
-            
-            // Sort repositories by name
-            self.repositories.sort { $0.name < $1.name }
-            
-        } catch {
-            self.errorMessage = "Failed to scan for repositories: \(error.localizedDescription)"
-            self.showError = true
-        }
-    }
-    
-    func refreshRepositories() async {
-        await scanForRepositories()
-    }
-    
-    func checkRepository(_ repository: Repository) async throws -> RepositoryStatus {
-        let status = try await resticService.checkRepository(repository: repository)
-        if status.isValid {
-            // Update repository status
-            if let index = repositories.firstIndex(where: { $0.id == repository.id }) {
-                var updatedRepo = repositories[index]
-                updatedRepo.lastChecked = Date()
-                repositories[index] = updatedRepo
-            }
-        }
-        return status
-    }
-    
-    func createRepository(name: String, path: URL, password: String) async {
-        guard !isCreatingRepository else { return }
-        
-        isCreatingRepository = true
-        validationState = RepositoryValidationState()
-        
-        do {
-            // Validate inputs before proceeding
-            var hasError = false
-            
-            // Validate name
-            if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                validationState.isNameValid = false
-                validationState.nameError = "Please enter a repository name"
-                hasError = true
-            }
-            
-            // Validate path
-            if !validatePath(path) {
-                validationState.isPathValid = false
-                validationState.pathError = "Please select a valid directory"
-                hasError = true
-            }
-            
-            // Validate password
-            if !validatePassword(password) {
-                validationState.isPasswordValid = false
-                validationState.passwordError = "Password must meet security requirements"
-                hasError = true
-            }
-            
-            if hasError {
-                isCreatingRepository = false
-                return
-            }
-            
-            // Create repository
-            let repository = try await resticService.initializeRepository(
-                name: name,
-                path: path,
-                password: password
-            )
-            
-            // Add to repositories list
-            repositories.append(repository)
-            
-            // Reset state
-            isCreatingRepository = false
-            showError = false
-            errorMessage = ""
-            
-        } catch let error as ResticError {
-            handleResticError(error)
-        } catch {
-            showError = true
-            errorMessage = "An unexpected error occurred: \(error.localizedDescription)"
-        }
-        
-        isCreatingRepository = false
-    }
-    
-    private func handleResticError(_ error: ResticError) {
-        showError = true
-        switch error {
-        case .notInstalled:
-            errorMessage = "Restic is not installed. Please install Restic and try again."
-        case .validationFailed(let errors):
-            errorMessage = errors.joined(separator: "\n")
-        case .initializationFailed(let underlying):
-            errorMessage = "Failed to initialise repository: \(underlying.localizedDescription)"
-        default:
-            errorMessage = "An error occurred: \(error.localizedDescription)"
-        }
-    }
-    
-    func removeRepository(_ repository: Repository) async {
-        do {
-            try repository.removePassword()
-            repositories.removeAll { $0.id == repository.id }
-        } catch {
-            errorMessage = "Failed to remove repository: \(error.localizedDescription)"
-            showError = true
-        }
-    }
-    
-    func deleteRepository(_ repository: Repository) async {
-        // Remove from list first for immediate UI feedback
-        if let index = repositories.firstIndex(where: { $0.id == repository.id }) {
-            repositories.remove(at: index)
-        }
-        
-        do {
-            // Then attempt to delete the actual repository
-            try FileManager.default.removeItem(at: repository.path)
-        } catch {
-            self.errorMessage = "Failed to delete repository: \(error.localizedDescription)"
-            self.showError = true
-        }
-        
-        // Always refresh the list to ensure consistency
-        await scanForRepositories()
-    }
-    
-    func listSnapshots(repository: Repository) async throws -> [Snapshot] {
-        do {
-            return try await resticService.listSnapshots(repository: repository)
-        } catch {
-            self.errorMessage = "Failed to list snapshots: \(error.localizedDescription)"
-            self.showError = true
-            throw error
-        }
-    }
-    
-    func createSnapshot(repository: Repository, paths: [URL]) async throws -> Snapshot {
-        return try await resticService.createSnapshot(repository: repository, paths: paths)
     }
 }

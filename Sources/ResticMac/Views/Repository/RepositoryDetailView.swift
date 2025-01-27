@@ -10,9 +10,15 @@ struct RepositoryDetailView: View {
     @State private var snapshots: [Snapshot] = []
     @State private var showError = false
     @State private var errorMessage = ""
-    
+    @State private var loadingTask: Task<Void, Never>?
+
     private var currentRepository: Repository {
-        viewModel.selectedRepository ?? repository
+        // Always use the latest version from our ViewModel
+        viewModel.repository(withId: repository.id) ?? repository
+    }
+    
+    private var isButtonsEnabled: Bool {
+        viewModel.hasSelectedRepository && !isCheckingStatus
     }
     
     var body: some View {
@@ -37,7 +43,7 @@ struct RepositoryDetailView: View {
                     Label("Create Backup", systemImage: "arrow.up.doc")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .disabled(isCheckingStatus)
+                .disabled(!isButtonsEnabled)
                 
                 Button {
                     Task { await checkStatus() }
@@ -52,7 +58,7 @@ struct RepositoryDetailView: View {
                         }
                     }
                 }
-                .disabled(isCheckingStatus)
+                .disabled(!isButtonsEnabled)
                 
                 Button(role: .destructive) {
                     showingDeleteAlert = true
@@ -60,7 +66,7 @@ struct RepositoryDetailView: View {
                     Label("Delete Repository", systemImage: "trash")
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .disabled(isCheckingStatus)
+                .disabled(!isButtonsEnabled)
             } header: {
                 Text("Actions")
             }
@@ -80,10 +86,31 @@ struct RepositoryDetailView: View {
         }
         .navigationTitle(currentRepository.name)
         .task {
-            await loadSnapshots()
+            // Cancel any existing task
+            loadingTask?.cancel()
+            
+            // Create new task for initial load
+            loadingTask = Task {
+                // Use the repository from our list to ensure we have latest version
+                viewModel.selectRepository(currentRepository)
+                await loadSnapshots()
+            }
+        }
+        .onDisappear {
+            // Cancel loading task when view disappears
+            loadingTask?.cancel()
+            loadingTask = nil
+            
+            if !showingBackupSheet {
+                viewModel.selectRepository(nil)
+            }
         }
         .onChange(of: currentRepository) { _, _ in
-            Task {
+            // Cancel existing task
+            loadingTask?.cancel()
+            
+            // Create new task for repository change
+            loadingTask = Task {
                 await loadSnapshots()
             }
         }
@@ -109,11 +136,13 @@ struct RepositoryDetailView: View {
     }
     
     private func checkStatus() async {
+        guard !isCheckingStatus else { return }
+        
         isCheckingStatus = true
         defer { isCheckingStatus = false }
         
         do {
-            try await viewModel.refreshRepository(currentRepository)
+            try await viewModel.refreshSelectedRepository()
         } catch {
             errorMessage = "Failed to check repository status: \(error.localizedDescription)"
             showError = true
@@ -121,11 +150,20 @@ struct RepositoryDetailView: View {
     }
     
     private func loadSnapshots() async {
+        guard !Task.isCancelled else { return }
+        
         do {
-            snapshots = try await viewModel.listSnapshots(repository: currentRepository)
+            let newSnapshots = try await viewModel.listSnapshots(repository: currentRepository)
+            if !Task.isCancelled {
+                withAnimation {
+                    snapshots = newSnapshots
+                }
+            }
         } catch {
-            errorMessage = "Failed to load snapshots: \(error.localizedDescription)"
-            showError = true
+            if !Task.isCancelled {
+                errorMessage = "Failed to load snapshots: \(error.localizedDescription)"
+                showError = true
+            }
         }
     }
 }
