@@ -1,36 +1,38 @@
 import Foundation
+import Logging
 
 @MainActor
 final class CommandDisplayViewModel: ObservableObject {
-    @Published var output: String = ""
-    @Published var progress: Double = 0
-    @Published var isRunning: Bool = false
-    @Published var hasError: Bool = false
-    @Published var errorMessage: String = ""
+    @Published private(set) var isRunning = false
+    @Published private(set) var progress: Double = 0
+    @Published private(set) var output: [String] = []
+    
+    private let maxLines = 1000
+    private let logger = Logger(label: "com.resticmac.CommandDisplayViewModel")
     
     func start() {
-        output = ""
-        progress = 0
         isRunning = true
-        hasError = false
-        errorMessage = ""
+        progress = 0
+        output.removeAll()
+        logger.info("Command execution started")
     }
     
-    func appendOutput(_ text: String) {
-        output += text + "\n"
-    }
-    
-    func updateProgress(_ value: Double) {
-        progress = value
-    }
-    
-    func complete() {
+    func finish() {
         isRunning = false
+        progress = 100
+        logger.info("Command execution completed")
     }
     
-    func handleError(_ error: Error) {
-        hasError = true
-        errorMessage = error.localizedDescription
-        isRunning = false
+    func updateProgress(_ percentage: Double) {
+        progress = percentage
+    }
+    
+    func appendOutput(_ line: String) {
+        output.append(line)
+        
+        // Trim old lines if we exceed maxLines
+        if output.count > maxLines {
+            output.removeFirst(output.count - maxLines)
+        }
     }
 }

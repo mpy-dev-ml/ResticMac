@@ -6,38 +6,43 @@ struct CommandDisplayView: View {
     
     var body: some View {
         VStack(spacing: 16) {
-            Text("Command Output")
-                .font(.headline)
-            
-            ScrollView {
-                Text(viewModel.output)
-                    .font(.system(.body, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
-                    .background(Color(.textBackgroundColor))
-                    .cornerRadius(8)
-            }
-            
-            if viewModel.isRunning {
-                ProgressView(value: viewModel.progress) {
-                    Text("Running...")
+            HStack {
+                Text("Command Output")
+                    .font(.headline)
+                Spacer()
+                if !viewModel.isRunning {
+                    Button("Close") {
+                        dismiss()
+                    }
                 }
             }
+            .padding()
             
-            if viewModel.hasError {
-                Text(viewModel.errorMessage)
-                    .foregroundColor(.red)
+            if viewModel.isRunning {
+                ProgressView(value: viewModel.progress, total: 100)
+                    .padding(.horizontal)
             }
             
-            Button("Close") {
-                dismiss()
-            }
-            .keyboardShortcut(.escape)
+            OutputList(output: viewModel.output)
         }
-        .padding()
-        .frame(width: 600, height: 400)
-        .onAppear {
-            viewModel.start()
+        .frame(minWidth: 400, minHeight: 300)
+    }
+}
+
+private struct OutputList: View {
+    let output: [CommandDisplayViewModel.OutputLine]
+    
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 2) {
+                ForEach(output) { line in
+                    Text(line.text)
+                        .foregroundColor(line.type == .error ? .red : .primary)
+                        .font(.system(.body, design: .monospaced))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
         }
     }
 }

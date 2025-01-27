@@ -10,7 +10,7 @@ struct ProcessResult {
     let exitCode: Int32
     
     var isSuccess: Bool {
-        exitCode == Constants.ExitCodes.success
+        exitCode == 0
     }
 }
 
@@ -19,6 +19,8 @@ enum ProcessError: LocalizedError {
     case executionFailed(exitCode: Int32, message: String)
     case processTerminated
     case outputDecodingFailed
+    case timeout(duration: TimeInterval)
+    case cleanupFailed
     
     var errorDescription: String? {
         switch self {
@@ -28,6 +30,10 @@ enum ProcessError: LocalizedError {
             return "Process was terminated unexpectedly"
         case .outputDecodingFailed:
             return "Failed to decode process output"
+        case .timeout(let duration):
+            return "The operation timed out after \(Int(duration)) seconds. Please try again or increase the timeout duration."
+        case .cleanupFailed:
+            return "Failed to clean up process resources"
         }
     }
 }
@@ -39,10 +45,23 @@ protocol ProcessOutputHandler {
     func handleComplete(_ exitCode: Int32) async
 }
 
+actor DataCollector {
+    private var data = Data()
+    
+    func append(_ newData: Data) {
+        data.append(newData)
+    }
+    
+    func toString() -> String {
+        String(data: data, encoding: .utf8) ?? ""
+    }
+}
+
 /// Utility class for executing shell commands
-final class ProcessExecutor {
+actor ProcessExecutor {
     private let logger = Logger(subsystem: "com.resticmac", category: "ProcessExecutor")
     internal var outputHandler: ProcessOutputHandler?
+    private let defaultTimeout: TimeInterval = 300 // 5 minutes default timeout
     
     init(outputHandler: ProcessOutputHandler? = nil) {
         self.outputHandler = outputHandler
@@ -54,18 +73,21 @@ final class ProcessExecutor {
     ///   - arguments: Array of arguments
     ///   - environment: Optional environment variables
     ///   - currentDirectoryURL: Working directory for the process
+    ///   - timeout: Optional timeout duration
     /// - Returns: ProcessResult containing output and exit code
     func execute(
         command: String,
         arguments: [String],
         environment: [String: String]? = nil,
-        currentDirectoryURL: URL? = nil
+        currentDirectoryURL: URL? = nil,
+        timeout: TimeInterval? = nil
     ) async throws -> ProcessResult {
+        logger.info("Executing command: \(command) \(arguments.joined(separator: " "))")
+        
         let process = Process()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
         
-        // Configure process
         process.executableURL = URL(fileURLWithPath: command)
         process.arguments = arguments
         process.standardOutput = outputPipe
@@ -79,73 +101,90 @@ final class ProcessExecutor {
             process.currentDirectoryURL = workingDirectory
         }
         
-        // Setup output handling
-        var outputData = Data()
-        var errorData = Data()
+        let outputCollector = DataCollector()
+        let errorCollector = DataCollector()
         
-        return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                do {
-                    // Handle standard output
-                    outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-                        let data = handle.availableData
-                        outputData.append(data)
-                        
-                        if let str = String(data: data, encoding: .utf8) {
-                            Task {
-                                await self?.outputHandler?.handleOutput(str)
-                            }
-                        }
-                    }
-                    
-                    // Handle standard error
-                    errorPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-                        let data = handle.availableData
-                        errorData.append(data)
-                        
-                        if let str = String(data: data, encoding: .utf8) {
-                            Task {
-                                await self?.outputHandler?.handleError(str)
-                            }
-                        }
-                    }
-                    
-                    // Process termination handler
-                    process.terminationHandler = { [weak self] process in
-                        outputPipe.fileHandleForReading.readabilityHandler = nil
-                        errorPipe.fileHandleForReading.readabilityHandler = nil
-                        
-                        let output = String(data: outputData, encoding: .utf8) ?? ""
-                        let error = String(data: errorData, encoding: .utf8) ?? ""
-                        
-                        Task {
-                            await self?.outputHandler?.handleComplete(process.terminationStatus)
-                        }
-                        
-                        if process.terminationStatus != Constants.ExitCodes.success {
-                            continuation.resume(throwing: ProcessError.executionFailed(
-                                exitCode: process.terminationStatus,
-                                message: error
-                            ))
-                        } else {
-                            continuation.resume(returning: ProcessResult(
-                                output: output,
-                                error: error,
-                                exitCode: process.terminationStatus
-                            ))
-                        }
-                    }
-                    
-                    // Launch process
-                    self.logger.debug("Executing: \(command) \(arguments.joined(separator: " "))")
-                    try process.run()
-                    
-                } catch {
-                    continuation.resume(throwing: error)
+        // Setup output handling
+        let outputStream = outputPipe.fileHandleForReading
+        let errorStream = errorPipe.fileHandleForReading
+        
+        outputStream.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            Task {
+                await outputCollector.append(data)
+                if let str = String(data: data, encoding: .utf8) {
+                    await self?.outputHandler?.handleOutput(str)
+                    self?.logger.debug("Process output: \(str)")
                 }
             }
-        } onCancel: {
+        }
+        
+        errorStream.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            Task {
+                await errorCollector.append(data)
+                if let str = String(data: data, encoding: .utf8) {
+                    await self?.outputHandler?.handleError(str)
+                    self?.logger.error("Process error: \(str)")
+                }
+            }
+        }
+        
+        // Start process with timeout
+        try process.run()
+        
+        let timeoutDuration = timeout ?? defaultTimeout
+        let startTime = Date()
+        
+        while process.isRunning {
+            try await Task.sleep(nanoseconds: 100_000_000) // 100ms check interval
+            
+            if Date().timeIntervalSince(startTime) > timeoutDuration {
+                do {
+                    try cleanup(process, outputStream, errorStream)
+                } catch {
+                    logger.error("Cleanup failed during timeout: \(error.localizedDescription)")
+                }
+                logger.error("Process timed out after \(timeoutDuration) seconds")
+                throw ProcessError.timeout(duration: timeoutDuration)
+            }
+        }
+        
+        // Clean up file handles
+        do {
+            try cleanup(process, outputStream, errorStream)
+        } catch {
+            logger.error("Cleanup failed after process completion: \(error.localizedDescription)")
+        }
+        
+        guard process.terminationStatus == 0 else {
+            logger.error("Process failed with exit code: \(process.terminationStatus)")
+            throw ProcessError.executionFailed(exitCode: process.terminationStatus, message: await errorCollector.toString())
+        }
+        
+        logger.info("Command completed successfully")
+        await outputHandler?.handleComplete(process.terminationStatus)
+        return ProcessResult(
+            output: await outputCollector.toString(),
+            error: await errorCollector.toString(),
+            exitCode: process.terminationStatus
+        )
+    }
+    
+    private func cleanup(_ process: Process, _ outputStream: FileHandle, _ errorStream: FileHandle) throws {
+        outputStream.readabilityHandler = nil
+        errorStream.readabilityHandler = nil
+        
+        if process.isRunning {
             process.terminate()
+        }
+        
+        do {
+            try outputStream.close()
+            try errorStream.close()
+        } catch {
+            logger.error("Failed to clean up process resources: \(error.localizedDescription)")
+            throw ProcessError.cleanupFailed
         }
     }
     

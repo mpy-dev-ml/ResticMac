@@ -1,6 +1,25 @@
 import Foundation
 
-struct RepositoryStatus: Codable {
+struct RepositoryStatus {
+    let state: State
+    let errors: [String]
+    
+    enum State: String {
+        case ok
+        case corrupted
+        case locked
+        case unknown
+    }
+    
+    var isValid: Bool {
+        state == .ok
+    }
+    
+    static let ok = RepositoryStatus(state: .ok, errors: [])
+    static let unknown = RepositoryStatus(state: .unknown, errors: ["Unknown repository status"])
+}
+
+struct RepositoryStatusDetails: Codable {
     let isValid: Bool
     let errors: [String]
     let lastCheck: Date

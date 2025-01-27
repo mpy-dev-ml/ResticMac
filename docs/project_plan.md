@@ -175,6 +175,131 @@ func displayCommand(_ command: ResticCommand) {
    - Advanced scheduling
    - Statistics
 
+## Repository Migration Plan
+
+### Overview
+Repository migration will be implemented after core functionality is stable. This feature will allow users to move repositories between different storage locations and backends.
+
+### Components
+
+#### 1. Models
+```swift
+enum MigrationType {
+    case local     // Local directory to local directory
+    case s3        // To/from S3
+    case b2        // To/from Backblaze B2
+    case sftp      // To/from SFTP server
+}
+
+struct MigrationConfig {
+    let sourceRepo: Repository
+    let destinationType: MigrationType
+    let destinationPath: URL
+    let copyOptions: MigrationOptions
+}
+
+struct MigrationOptions {
+    let deleteSource: Bool        // Delete source after successful migration
+    let verifyDestination: Bool   // Verify repository after copy
+    let preservePermissions: Bool // Maintain original file permissions
+}
+
+struct MigrationProgress {
+    let totalBytes: Int64
+    let copiedBytes: Int64
+    let currentFile: String
+    let estimatedTimeRemaining: TimeInterval
+    let status: MigrationStatus
+}
+
+enum MigrationStatus {
+    case preparing
+    case copying
+    case verifying
+    case finalising
+    case completed
+    case failed(Error)
+}
+```
+
+#### 2. Services
+```swift
+protocol RepositoryMigrationService {
+    func migrate(config: MigrationConfig) async throws -> Repository
+    func cancelMigration() async
+    func getMigrationProgress() -> MigrationProgress
+}
+```
+
+### Implementation Phases
+
+#### Phase 1: Local Migration (2 days)
+1. Basic migration service implementation
+2. Local-to-local repository copying
+3. Progress tracking
+4. Basic UI implementation
+
+#### Phase 2: Remote Migration (3 days)
+1. S3 backend support
+2. B2 backend support
+3. SFTP support
+4. Credentials management
+5. Remote progress tracking
+
+#### Phase 3: Advanced Features (2 days)
+1. Repository verification
+2. Source cleanup
+3. Permission management
+4. Bandwidth throttling
+
+#### Phase 4: UI Polish (2 days)
+1. Progress visualisation
+2. Error handling improvements
+3. Migration history
+4. Status notifications
+
+### Error Handling
+```swift
+enum MigrationError: LocalizedError {
+    case sourceNotAccessible
+    case destinationNotWritable
+    case insufficientSpace
+    case networkError(Error)
+    case verificationFailed
+    case cancelled
+    case credentialsInvalid
+}
+```
+
+### Testing Strategy
+1. Unit Tests
+   - Migration service tests
+   - Progress calculation tests
+   - Error handling tests
+   - Configuration validation
+
+2. Integration Tests
+   - End-to-end local migration
+   - Remote backend integration
+   - Cancellation handling
+   - Progress reporting accuracy
+
+3. UI Tests
+   - Migration workflow
+   - Progress updates
+   - Error presentation
+   - User interaction handling
+
+### Success Criteria
+1. Successful migration between all supported backends
+2. Accurate progress reporting
+3. Proper error handling and recovery
+4. Clear user feedback
+5. Performance targets:
+   - Local migration: >50MB/s
+   - Remote migration: Network speed dependent
+   - UI responsiveness: <16ms frame time
+
 ## Implementation Guidelines
 
 1. Core Services:

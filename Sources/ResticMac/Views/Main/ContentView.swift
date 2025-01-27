@@ -8,8 +8,7 @@ struct ContentView: View {
     
     init() {
         let executor = ProcessExecutor()
-        let commandDisplay = CommandDisplayViewModel()
-        let service = ResticService(executor: executor, commandDisplay: commandDisplay)
+        let service = ResticService(executor: executor)
         _resticService = StateObject(wrappedValue: service)
     }
     
@@ -65,6 +64,9 @@ struct ContentView: View {
             if !newValue {
                 UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
             }
+        }
+        .task {
+            await resticService.setCommandDisplay(commandDisplay)
         }
     }
 }

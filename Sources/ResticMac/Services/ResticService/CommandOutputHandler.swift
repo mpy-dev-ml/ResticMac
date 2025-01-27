@@ -34,46 +34,51 @@ struct JSONOutputFormat: OutputFormat {
 final class CommandOutputHandler: ProcessOutputHandler {
     private weak var displayViewModel: CommandDisplayViewModel?
     private let logger = Logger(label: "com.resticmac.CommandOutputHandler")
-    private let outputFormat: OutputFormat
     
-    init(displayViewModel: CommandDisplayViewModel?, outputFormat: OutputFormat = JSONOutputFormat()) {
+    init(displayViewModel: CommandDisplayViewModel?) {
         self.displayViewModel = displayViewModel
-        self.outputFormat = outputFormat
+        Task { @MainActor in
+            displayViewModel?.start()
+        }
     }
     
     func handleOutput(_ line: String) async {
-        let output = outputFormat.parseOutput(line)
-        await processOutput(output)
+        for subline in line.split(separator: "\n") {
+            let lineStr = String(subline)
+            await displayViewModel?.appendOutput(lineStr)
+            logger.debug("Command output: \(lineStr)")
+            
+            // Check for progress information
+            if let progress = parseProgress(from: lineStr) {
+                await displayViewModel?.updateProgress(progress)
+            }
+        }
     }
     
     func handleError(_ line: String) async {
-        if line.contains("error:") {
-            logger.error("Restic error: \(line)")
-            await displayViewModel?.appendOutput("Error: \(line)")
-            await displayViewModel?.handleError(ResticError.commandFailed(code: -1, message: line))
-        } else {
-            await displayViewModel?.appendOutput(line)
+        for subline in line.split(separator: "\n") {
+            let lineStr = String(subline)
+            await displayViewModel?.appendOutput(lineStr)
+            logger.error("Command error: \(lineStr)")
         }
     }
     
     func handleComplete(_ exitCode: Int32) async {
-        await displayViewModel?.appendOutput("\nCommand completed with exit code: \(exitCode)\n")
-        if exitCode == 0 {
-            await displayViewModel?.complete()
-        }
+        await displayViewModel?.finish()
+        logger.info("Command completed with exit code: \(exitCode)")
     }
     
-    private func processOutput(_ output: CommandOutput) async {
-        switch output.type {
-        case .progress(let progress):
-            await displayViewModel?.updateProgress(progress)
-            await displayViewModel?.appendOutput(output.message)
-        case .summary:
-            await displayViewModel?.appendOutput(output.message)
-            await displayViewModel?.complete()
-        case .unknown:
-            await displayViewModel?.appendOutput(output.message)
+    private func parseProgress(from line: String) -> Double? {
+        // Example progress line: "[42.32%] 12 / 100 files"
+        let progressPattern = #"\[(\d+\.\d+)%\]"#
+        
+        guard let range = line.range(of: progressPattern, options: .regularExpression),
+              let percentStr = line[range].split(separator: "%").first?.dropFirst(),
+              let percent = Double(percentStr) else {
+            return nil
         }
+        
+        return percent
     }
 }
 
@@ -88,4 +93,23 @@ struct CommandOutput {
     
     let type: OutputType
     let message: String
+}
+
+// MARK: - Progress Types
+
+enum CommandProgress {
+    case indeterminate
+    case percentage(Double)
+    case complete
+    
+    var description: String {
+        switch self {
+        case .indeterminate:
+            return "Processing..."
+        case .percentage(let value):
+            return "\(Int(value))% Complete"
+        case .complete:
+            return "Completed"
+        }
+    }
 }

@@ -1,84 +1,59 @@
 import Foundation
 
 enum ResticCommand {
-    case version
-    case initRepository(at: URL, password: String)
+    case initialize(repository: URL, password: String)
     case backup(repository: URL, paths: [URL], password: String)
+    case snapshots(repository: URL, password: String)
     case check(repository: URL, password: String)
-    case scanRepository(repository: URL, password: String)
-    case listSnapshots(repository: URL, password: String)
     case restore(repository: URL, snapshot: String, target: URL, password: String)
+    case ls(repository: URL, snapshotID: String, password: String)
     
-    var displayCommand: String {
-        switch self {
-        case .version:
-            return "restic version"
-        case .initRepository(let path, _):
-            return "restic init --repository \(path.path) --json"
-        case .backup(let repository, let paths, _):
-            let pathsString = paths.map { $0.path }.joined(separator: " ")
-            return "restic backup --repository \(repository.path) \(pathsString) --json"
-        case .check(let repository, _):
-            return "restic check --repository \(repository.path) --json"
-        case .scanRepository(let repository, _):
-            return "restic snapshots --repository \(repository.path) --json"
-        case .listSnapshots(let repository, _):
-            return "restic snapshots --repository \(repository.path) --json"
-        case .restore(let repository, let snapshot, let target, _):
-            return "restic restore \(snapshot) --repository \(repository.path) --target \(target.path) --json"
-        }
-    }
+    var executable: String { "restic" }
     
     var arguments: [String] {
         switch self {
-        case .version:
-            return ["version"]
-        case .initRepository(let path, _):
-            return ["init", "--repository", path.path, "--json"]
+        case .initialize(let repository, _):
+            return ["init", "--repo", repository.path, "--json"]
+            
         case .backup(let repository, let paths, _):
-            var args = ["backup", "--repository", repository.path, "--json"]
-            args.append(contentsOf: paths.map { $0.path })
-            return args
+            return ["backup", "--repo", repository.path, "--json"] + paths.map { $0.path }
+            
+        case .snapshots(let repository, _):
+            return ["snapshots", "--repo", repository.path, "--json"]
+            
         case .check(let repository, _):
-            return ["check", "--repository", repository.path, "--json"]
-        case .scanRepository(let repository, _):
-            return ["snapshots", "--repository", repository.path, "--json"]
-        case .listSnapshots(let repository, _):
-            return ["snapshots", "--repository", repository.path, "--json"]
+            return ["check", "--repo", repository.path, "--json"]
+            
         case .restore(let repository, let snapshot, let target, _):
-            return ["restore", snapshot, "--repository", repository.path, "--target", target.path, "--json"]
+            return ["restore", snapshot, "--repo", repository.path, "--target", target.path, "--json"]
+            
+        case .ls(let repository, let snapshotID, _):
+            return ["ls", "--repo", repository.path, snapshotID, "--json"]
         }
     }
     
-    var password: String? {
+    var environment: [String: String] {
         switch self {
-        case .version:
-            return nil
-        case .initRepository(_, let password),
+        case .initialize(_, let password),
              .backup(_, _, let password),
+             .snapshots(_, let password),
              .check(_, let password),
-             .scanRepository(_, let password),
-             .listSnapshots(_, let password),
-             .restore(_, _, _, let password):
-            return password
+             .restore(_, _, _, let password),
+             .ls(_, _, let password):
+            return ["RESTIC_PASSWORD": password]
         }
     }
     
-    var requiresRepository: Bool {
+    var timeout: TimeInterval {
         switch self {
-        case .version:
-            return false
+        case .backup:
+            return 3600 // 1 hour for backups
+        case .restore:
+            return 3600 // 1 hour for restores
+        case .check:
+            return 1800 // 30 minutes for checks
         default:
-            return true
-        }
-    }
-    
-    var requiresPassword: Bool {
-        switch self {
-        case .version:
-            return false
-        default:
-            return true
+            return 300 // 5 minutes for other operations
         }
     }
 }
