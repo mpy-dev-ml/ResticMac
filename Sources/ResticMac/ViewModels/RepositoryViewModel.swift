@@ -19,21 +19,51 @@ final class RepositoryViewModel: ObservableObject {
     }
     
     func validatePath(_ path: URL) -> Bool {
-        return path.isFileURL && FileManager.default.isWritableFile(atPath: path.path)
+        // Check if path exists and is writable
+        let fileManager = FileManager.default
+        var isDirectory: ObjCBool = false
+        
+        if !fileManager.fileExists(atPath: path.path, isDirectory: &isDirectory) {
+            do {
+                try fileManager.createDirectory(at: path, withIntermediateDirectories: true)
+                return true
+            } catch {
+                return false
+            }
+        }
+        
+        return isDirectory.boolValue && fileManager.isWritableFile(atPath: path.path)
     }
     
     func validatePassword(_ password: String) -> Bool {
-        return !password.isEmpty && password.count >= 8
+        // Enhanced password validation matching the UI requirements
+        let hasMinLength = password.count >= 8
+        let hasUppercase = password.contains(where: { $0.isUppercase })
+        let hasLowercase = password.contains(where: { $0.isLowercase })
+        let hasNumber = password.contains(where: { $0.isNumber })
+        let hasSpecial = password.contains(where: { "!@#$%^&*()_+-=[]{}|;:,.<>?".contains($0) })
+        
+        // Require minimum length plus at least 3 other criteria
+        let criteriaCount = [hasUppercase, hasLowercase, hasNumber, hasSpecial]
+            .filter { $0 }
+            .count
+            
+        return hasMinLength && criteriaCount >= 3
     }
     
-    func scanForRepositories(in directory: URL) async throws {
+    func scanForRepositories(in directory: URL) async {
         isLoading = true
         defer { isLoading = false }
         
-        let results = try await resticService.scanForRepositories(in: directory)
-        repositories = results.compactMap { result in
-            guard result.isValid else { return nil }
-            return Repository(name: result.path.lastPathComponent, path: result.path)
+        do {
+            let results = try await resticService.scanForRepositories(in: directory)
+            repositories = results.compactMap { result in
+                guard result.isValid else { return nil }
+                return Repository(name: result.path.lastPathComponent, path: result.path)
+            }
+        } catch {
+            errorMessage = "Failed to scan for repositories: \(error.localizedDescription)"
+            showError = true
         }
     }
     
@@ -48,20 +78,56 @@ final class RepositoryViewModel: ObservableObject {
     }
     
     func createRepository(name: String, path: URL, password: String) async throws {
+        print("Starting repository creation process")
+        print("Name: \(name)")
+        print("Path: \(path)")
+        print("Password length: \(password.count)")
+        
         isCreatingRepository = true
         defer { isCreatingRepository = false }
         
-        let repository = try await resticService.initializeRepository(
-            name: name,
-            path: path,
-            password: password
-        )
-        
-        repositories.append(repository)
+        do {
+            print("Initializing repository...")
+            let repository = try await resticService.initializeRepository(
+                name: name,
+                path: path,
+                password: password
+            )
+            print("Repository initialized")
+            repositories.append(repository)
+            
+            print("Verifying repository...")
+            try await checkRepository(repository)
+            print("Repository verified successfully")
+            
+        } catch let error as ResticError {
+            print("Repository creation failed with ResticError: \(error)")
+            switch error {
+            case .repositoryInvalid(let errors):
+                throw NSError(
+                    domain: "ResticMac",
+                    code: 1,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: errors.joined(separator: "\n")
+                    ]
+                )
+            default:
+                throw error
+            }
+        } catch {
+            print("Repository creation failed with error: \(error)")
+            throw error
+        }
     }
     
     func removeRepository(_ repository: Repository) async {
-        repositories.removeAll { $0.path == repository.path }
+        do {
+            try repository.removePassword()
+            repositories.removeAll { $0.id == repository.id }
+        } catch {
+            errorMessage = "Failed to remove repository: \(error.localizedDescription)"
+            showError = true
+        }
     }
     
     func deleteRepository(_ repository: Repository) async {
