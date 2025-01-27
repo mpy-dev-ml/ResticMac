@@ -1,7 +1,12 @@
 import Foundation
-import Combine
-import OSLog
-import Logging
+import os
+
+/// Protocol for process execution output handling
+protocol ProcessOutputHandler {
+    func handleOutput(_ line: String) async
+    func handleError(_ line: String) async
+    func handleComplete(_ exitCode: Int32) async
+}
 
 /// Result type for process execution
 struct ProcessResult {
@@ -15,36 +20,16 @@ struct ProcessResult {
 }
 
 /// Error types for process execution
-enum ProcessError: LocalizedError {
-    case executionFailed(exitCode: Int32, message: String)
-    case processTerminated
-    case outputDecodingFailed
-    case timeout(duration: TimeInterval)
-    case cleanupFailed
+struct ProcessError: LocalizedError {
+    let message: String
+    let exitCode: Int32
     
     var errorDescription: String? {
-        switch self {
-        case .executionFailed(let code, let message):
-            return "Process failed with exit code \(code): \(message)"
-        case .processTerminated:
-            return "Process was terminated unexpectedly"
-        case .outputDecodingFailed:
-            return "Failed to decode process output"
-        case .timeout(let duration):
-            return "The operation timed out after \(Int(duration)) seconds. Please try again or increase the timeout duration."
-        case .cleanupFailed:
-            return "Failed to clean up process resources"
-        }
+        message
     }
 }
 
-/// Protocol for process execution output handling
-protocol ProcessOutputHandler {
-    func handleOutput(_ line: String) async
-    func handleError(_ line: String) async
-    func handleComplete(_ exitCode: Int32) async
-}
-
+/// Data collector for process output
 actor DataCollector {
     private var data = Data()
     
@@ -59,7 +44,6 @@ actor DataCollector {
 
 /// Utility class for executing shell commands
 actor ProcessExecutor {
-    private let logger = Logger(subsystem: "com.resticmac", category: "ProcessExecutor")
     internal var outputHandler: ProcessOutputHandler?
     private let defaultTimeout: TimeInterval = 300 // 5 minutes default timeout
     
@@ -69,27 +53,27 @@ actor ProcessExecutor {
     
     /// Execute a command and return the result
     /// - Parameters:
-    ///   - command: The command to execute
+    ///   - executable: The command to execute
     ///   - arguments: Array of arguments
     ///   - environment: Optional environment variables
     ///   - currentDirectoryURL: Working directory for the process
     ///   - timeout: Optional timeout duration
     /// - Returns: ProcessResult containing output and exit code
     func execute(
-        command: String,
+        _ executable: String,
         arguments: [String],
         environment: [String: String]? = nil,
         currentDirectoryURL: URL? = nil,
         timeout: TimeInterval? = nil
     ) async throws -> ProcessResult {
-        logger.info("Executing command: \(command) \(arguments.joined(separator: " "))")
+        AppLogger.info("Executing command: \(executable) \(arguments.joined(separator: " "))", category: .process)
         
         let process = Process()
         let outputPipe = Pipe()
         let errorPipe = Pipe()
         
-        process.executableURL = URL(fileURLWithPath: command)
-        process.arguments = arguments
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [executable] + arguments
         process.standardOutput = outputPipe
         process.standardError = errorPipe
         
@@ -114,7 +98,7 @@ actor ProcessExecutor {
                 await outputCollector.append(data)
                 if let str = String(data: data, encoding: .utf8) {
                     await self?.outputHandler?.handleOutput(str)
-                    self?.logger.debug("Process output: \(str)")
+                    AppLogger.debug("Process output: \(str)", category: .process)
                 }
             }
         }
@@ -125,7 +109,7 @@ actor ProcessExecutor {
                 await errorCollector.append(data)
                 if let str = String(data: data, encoding: .utf8) {
                     await self?.outputHandler?.handleError(str)
-                    self?.logger.error("Process error: \(str)")
+                    AppLogger.error("Process error: \(str)", category: .process)
                 }
             }
         }
@@ -143,10 +127,10 @@ actor ProcessExecutor {
                 do {
                     try cleanup(process, outputStream, errorStream)
                 } catch {
-                    logger.error("Cleanup failed during timeout: \(error.localizedDescription)")
+                    AppLogger.error("Cleanup failed during timeout: \(error.localizedDescription)", category: .process)
                 }
-                logger.error("Process timed out after \(timeoutDuration) seconds")
-                throw ProcessError.timeout(duration: timeoutDuration)
+                AppLogger.error("Process timed out after \(timeoutDuration) seconds", category: .process)
+                throw ProcessError(message: "The operation timed out after \(Int(timeoutDuration)) seconds. Please try again or increase the timeout duration.", exitCode: -1)
             }
         }
         
@@ -154,15 +138,15 @@ actor ProcessExecutor {
         do {
             try cleanup(process, outputStream, errorStream)
         } catch {
-            logger.error("Cleanup failed after process completion: \(error.localizedDescription)")
+            AppLogger.error("Cleanup failed after process completion: \(error.localizedDescription)", category: .process)
         }
         
         guard process.terminationStatus == 0 else {
-            logger.error("Process failed with exit code: \(process.terminationStatus)")
-            throw ProcessError.executionFailed(exitCode: process.terminationStatus, message: await errorCollector.toString())
+            AppLogger.error("Process failed with exit code: \(process.terminationStatus)", category: .process)
+            throw ProcessError(message: "Process failed with exit code: \(process.terminationStatus)", exitCode: process.terminationStatus)
         }
         
-        logger.info("Command completed successfully")
+        AppLogger.info("Command completed successfully", category: .process)
         await outputHandler?.handleComplete(process.terminationStatus)
         return ProcessResult(
             output: await outputCollector.toString(),
@@ -183,8 +167,8 @@ actor ProcessExecutor {
             try outputStream.close()
             try errorStream.close()
         } catch {
-            logger.error("Failed to clean up process resources: \(error.localizedDescription)")
-            throw ProcessError.cleanupFailed
+            AppLogger.error("Failed to clean up process resources: \(error.localizedDescription)", category: .process)
+            throw ProcessError(message: "Failed to clean up process resources", exitCode: -1)
         }
     }
     
@@ -205,7 +189,7 @@ actor ProcessExecutor {
             Task {
                 do {
                     let result = try await execute(
-                        command: command,
+                        command,
                         arguments: arguments,
                         environment: environment,
                         currentDirectoryURL: currentDirectoryURL
@@ -219,6 +203,74 @@ actor ProcessExecutor {
                     continuation.finish(throwing: error)
                 }
             }
+        }
+    }
+    
+    /// Execute a command and return the result
+    /// - Parameters:
+    ///   - executable: The command to execute
+    ///   - arguments: Array of arguments
+    ///   - environment: Optional environment variables
+    /// - Returns: ProcessResult containing output and exit code
+    func execute(
+        _ executable: String,
+        arguments: [String],
+        environment: [String: String]
+    ) async throws -> ProcessResult {
+        AppLogger.info("Executing command: \(executable) \(arguments.joined(separator: " "))", category: .process)
+        
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [executable] + arguments
+        process.environment = environment
+        
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+        
+        let outputCollector = DataCollector()
+        let errorCollector = DataCollector()
+        
+        do {
+            try process.run()
+            
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    for try await line in outputPipe.fileHandleForReading.bytes.lines {
+                        await outputCollector.append(line.data(using: .utf8) ?? Data())
+                        AppLogger.debug("Process output: \(line)", category: .process)
+                    }
+                }
+                
+                group.addTask {
+                    for try await line in errorPipe.fileHandleForReading.bytes.lines {
+                        await errorCollector.append(line.data(using: .utf8) ?? Data())
+                        AppLogger.error("Process error: \(line)", category: .process)
+                    }
+                }
+                
+                try await group.waitForAll()
+            }
+            
+            process.waitUntilExit()
+            
+            let result = ProcessResult(
+                output: await outputCollector.toString(),
+                error: await errorCollector.toString(),
+                exitCode: process.terminationStatus
+            )
+            
+            if !result.isSuccess {
+                AppLogger.error("Process failed with exit code: \(result.exitCode)", category: .process)
+            } else {
+                AppLogger.info("Command completed successfully", category: .process)
+            }
+            
+            return result
+        } catch {
+            AppLogger.error("Process execution failed: \(error.localizedDescription)", category: .process)
+            throw ProcessError(message: error.localizedDescription, exitCode: -1)
         }
     }
 }

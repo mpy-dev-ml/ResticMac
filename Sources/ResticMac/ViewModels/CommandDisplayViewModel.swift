@@ -1,26 +1,37 @@
 import Foundation
-import Logging
+import os
+
+enum OutputType {
+    case standard
+    case error
+}
+
+struct OutputLine: Identifiable {
+    let id = UUID()
+    let text: String
+    let type: OutputType
+    let timestamp: Date
+}
 
 @MainActor
 final class CommandDisplayViewModel: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var progress: Double = 0
-    @Published private(set) var output: [String] = []
+    @Published private(set) var output: [OutputLine] = []
     
     private let maxLines = 1000
-    private let logger = Logger(label: "com.resticmac.CommandDisplayViewModel")
     
     func start() {
         isRunning = true
         progress = 0
         output.removeAll()
-        logger.info("Command execution started")
+        AppLogger.info("Command execution started", category: .process)
     }
     
     func finish() {
         isRunning = false
         progress = 100
-        logger.info("Command execution completed")
+        AppLogger.info("Command execution completed", category: .process)
     }
     
     func updateProgress(_ percentage: Double) {
@@ -28,7 +39,15 @@ final class CommandDisplayViewModel: ObservableObject {
     }
     
     func appendOutput(_ line: String) {
-        output.append(line)
+        appendLine(line, type: .standard)
+    }
+    
+    func appendError(_ line: String) {
+        appendLine(line, type: .error)
+    }
+    
+    private func appendLine(_ line: String, type: OutputType) {
+        output.append(OutputLine(text: line, type: type, timestamp: Date()))
         
         // Trim old lines if we exceed maxLines
         if output.count > maxLines {

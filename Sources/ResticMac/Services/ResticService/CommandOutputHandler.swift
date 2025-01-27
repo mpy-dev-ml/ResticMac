@@ -1,5 +1,5 @@
 import Foundation
-import Logging
+import os
 
 // MARK: - Output Format Protocol
 
@@ -33,7 +33,6 @@ struct JSONOutputFormat: OutputFormat {
 /// Handles and processes output from Restic commands
 final class CommandOutputHandler: ProcessOutputHandler {
     private weak var displayViewModel: CommandDisplayViewModel?
-    private let logger = Logger(label: "com.resticmac.CommandOutputHandler")
     
     init(displayViewModel: CommandDisplayViewModel?) {
         self.displayViewModel = displayViewModel
@@ -46,7 +45,7 @@ final class CommandOutputHandler: ProcessOutputHandler {
         for subline in line.split(separator: "\n") {
             let lineStr = String(subline)
             await displayViewModel?.appendOutput(lineStr)
-            logger.debug("Command output: \(lineStr)")
+            AppLogger.debug("Command output: \(lineStr)", category: .process)
             
             // Check for progress information
             if let progress = parseProgress(from: lineStr) {
@@ -59,13 +58,13 @@ final class CommandOutputHandler: ProcessOutputHandler {
         for subline in line.split(separator: "\n") {
             let lineStr = String(subline)
             await displayViewModel?.appendOutput(lineStr)
-            logger.error("Command error: \(lineStr)")
+            AppLogger.error("Command error: \(lineStr)", category: .process)
         }
     }
     
     func handleComplete(_ exitCode: Int32) async {
         await displayViewModel?.finish()
-        logger.info("Command completed with exit code: \(exitCode)")
+        AppLogger.info("Command completed with exit code: \(exitCode)", category: .process)
     }
     
     private func parseProgress(from line: String) -> Double? {

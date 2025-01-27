@@ -1,6 +1,6 @@
 import Foundation
-import Logging
 import Combine
+import os
 
 @MainActor
 protocol ResticServiceProtocol {
@@ -18,7 +18,6 @@ protocol ResticServiceProtocol {
 @MainActor
 final class ResticService: ResticServiceProtocol, ObservableObject {
     private let executor: ProcessExecutor
-    private let logger = Logger(label: "com.resticmac.ResticService")
     private var displayViewModel: CommandDisplayViewModel?
     
     init(executor: ProcessExecutor = ProcessExecutor()) {
@@ -30,18 +29,17 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
     }
     
     func verifyInstallation() async throws {
-        let handler = CommandOutputHandler(displayViewModel: displayViewModel)
         do {
             let result = try await executor.execute(
                 "restic",
                 arguments: ["version"],
-                environment: [:],
-                outputHandler: handler
+                environment: [:]
             )
             if !result.isSuccess {
                 throw ResticError.notInstalled
             }
         } catch {
+            AppLogger.error("Failed to verify Restic installation: \(error.localizedDescription)", category: .process)
             throw ResticError.notInstalled
         }
     }
@@ -87,26 +85,24 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
     }
     
     private func executeCommand(_ command: ResticCommand) async throws -> String {
-        let handler = CommandOutputHandler(displayViewModel: displayViewModel)
-        
         do {
             let result = try await executor.execute(
                 command.executable,
                 arguments: command.arguments,
-                environment: command.environment,
-                outputHandler: handler
+                environment: command.environment
             )
             
             if !result.isSuccess {
+                AppLogger.error("Command failed: \(command.executable) with code \(result.exitCode)", category: .process)
                 throw ResticError.commandFailed(code: Int(result.exitCode), message: result.error)
             }
             
             return result.output
         } catch let error as ProcessError {
-            logger.error("Process execution failed: \(error.localizedDescription)")
+            AppLogger.error("Process execution failed: \(error.localizedDescription)", category: .process)
             throw ResticError.commandExecutionFailed(error)
         } catch {
-            logger.error("Unexpected error: \(error.localizedDescription)")
+            AppLogger.error("Unexpected error: \(error.localizedDescription)", category: .process)
             throw ResticError.unknown(error.localizedDescription)
         }
     }
@@ -122,7 +118,7 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
     }
     
     deinit {
-        logger.debug("ResticService deinitialised")
+        AppLogger.debug("ResticService deinitialised", category: .process)
     }
 }
 

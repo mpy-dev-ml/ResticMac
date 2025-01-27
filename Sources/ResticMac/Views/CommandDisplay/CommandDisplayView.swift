@@ -30,7 +30,7 @@ struct CommandDisplayView: View {
 }
 
 private struct OutputList: View {
-    let output: [CommandDisplayViewModel.OutputLine]
+    let output: [OutputLine]
     
     var body: some View {
         ScrollView {
