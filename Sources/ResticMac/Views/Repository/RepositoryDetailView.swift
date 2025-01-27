@@ -3,6 +3,7 @@ import SwiftUI
 struct RepositoryDetailView: View {
     let repository: Repository
     @ObservedObject var viewModel: RepositoryViewModel
+    @Environment(\.dismiss) private var dismiss
     @State private var showingBackupSheet = false
     @State private var showingDeleteAlert = false
     @State private var isCheckingStatus = false
@@ -10,15 +11,19 @@ struct RepositoryDetailView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     
+    private var currentRepository: Repository {
+        viewModel.selectedRepository ?? repository
+    }
+    
     var body: some View {
         List {
             Section {
-                InfoRow(title: "Name", value: repository.name)
-                InfoRow(title: "Location", value: repository.path.path)
-                if let lastChecked = repository.lastChecked {
+                InfoRow(title: "Name", value: currentRepository.name)
+                InfoRow(title: "Location", value: currentRepository.path.path)
+                if let lastChecked = currentRepository.lastChecked {
                     InfoRow(title: "Last Checked", value: lastChecked.formatted())
                 }
-                if let lastBackup = repository.lastBackup {
+                if let lastBackup = currentRepository.lastBackup {
                     InfoRow(title: "Last Backup", value: lastBackup.formatted())
                 }
             } header: {
@@ -26,23 +31,36 @@ struct RepositoryDetailView: View {
             }
             
             Section {
-                Button(action: { showingBackupSheet = true }) {
+                Button {
+                    showingBackupSheet = true
+                } label: {
                     Label("Create Backup", systemImage: "arrow.up.doc")
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .disabled(isCheckingStatus)
                 
-                Button(action: checkStatus) {
-                    if isCheckingStatus {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    } else {
+                Button {
+                    Task { await checkStatus() }
+                } label: {
+                    HStack {
                         Label("Check Status", systemImage: "checkmark.circle")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if isCheckingStatus {
+                            Spacer()
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        }
                     }
                 }
                 .disabled(isCheckingStatus)
                 
-                Button(role: .destructive, action: { showingDeleteAlert = true }) {
+                Button(role: .destructive) {
+                    showingDeleteAlert = true
+                } label: {
                     Label("Delete Repository", systemImage: "trash")
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .disabled(isCheckingStatus)
             } header: {
                 Text("Actions")
             }
@@ -60,17 +78,23 @@ struct RepositoryDetailView: View {
                 Text("Snapshots")
             }
         }
-        .navigationTitle(repository.name)
+        .navigationTitle(currentRepository.name)
         .task {
             await loadSnapshots()
         }
+        .onChange(of: currentRepository) { _, _ in
+            Task {
+                await loadSnapshots()
+            }
+        }
         .sheet(isPresented: $showingBackupSheet) {
-            BackupView(repository: repository, viewModel: viewModel)
+            BackupView(repository: currentRepository, viewModel: viewModel)
         }
         .alert("Delete Repository", isPresented: $showingDeleteAlert) {
             Button("Delete", role: .destructive) {
                 Task {
-                    await viewModel.deleteRepository(repository)
+                    await viewModel.deleteRepository(currentRepository)
+                    dismiss()
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -84,26 +108,21 @@ struct RepositoryDetailView: View {
         }
     }
     
-    private func checkStatus() {
-        Task {
-            isCheckingStatus = true
-            defer { isCheckingStatus = false }
-            do {
-                let status = try await viewModel.checkRepository(repository)
-                if !status.isValid {
-                    errorMessage = "Repository check failed"
-                    showError = true
-                }
-            } catch {
-                errorMessage = "Failed to check repository status: \(error.localizedDescription)"
-                showError = true
-            }
+    private func checkStatus() async {
+        isCheckingStatus = true
+        defer { isCheckingStatus = false }
+        
+        do {
+            try await viewModel.refreshRepository(currentRepository)
+        } catch {
+            errorMessage = "Failed to check repository status: \(error.localizedDescription)"
+            showError = true
         }
     }
     
     private func loadSnapshots() async {
         do {
-            snapshots = try await viewModel.listSnapshots(for: repository)
+            snapshots = try await viewModel.listSnapshots(repository: currentRepository)
         } catch {
             errorMessage = "Failed to load snapshots: \(error.localizedDescription)"
             showError = true
@@ -111,17 +130,17 @@ struct RepositoryDetailView: View {
     }
 }
 
-// Helper Views
 struct InfoRow: View {
     let title: String
     let value: String
     
     var body: some View {
-        HStack {
+        VStack(alignment: .leading) {
             Text(title)
+                .font(.caption)
                 .foregroundColor(.secondary)
-            Spacer()
             Text(value)
+                .font(.body)
         }
     }
 }

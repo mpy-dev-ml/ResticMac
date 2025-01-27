@@ -5,41 +5,61 @@ struct RepositoryView: View {
     @State private var showingForm = false
     @State private var showingError = false
     @State private var showingDeleteAlert = false
-    @State private var selectedRepository: Repository?
+    @State private var navigationPath = NavigationPath()
     
     init(resticService: ResticServiceProtocol, commandDisplay: CommandDisplayViewModel) {
-        print("Initializing RepositoryView")
         _viewModel = StateObject(wrappedValue: RepositoryViewModel(resticService: resticService, commandDisplay: commandDisplay))
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack(path: $navigationPath) {
             List {
                 if viewModel.repositories.isEmpty {
                     emptyStateView
                 } else {
-                    repositoryListView
+                    ForEach(viewModel.repositories) { repository in
+                        NavigationLink {
+                            RepositoryDetailView(repository: repository, viewModel: viewModel)
+                                .onAppear {
+                                    viewModel.selectRepository(repository)
+                                }
+                                .onDisappear {
+                                    viewModel.selectRepository(nil)
+                                }
+                        } label: {
+                            RepositoryRowView(repository: repository, isSelected: viewModel.selectedRepositoryId == repository.id)
+                        }
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                viewModel.selectRepository(repository)
+                                showingDeleteAlert = true
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
                 }
             }
             .navigationTitle("Repositories")
-        }
-        .toolbar(content: {
-            ToolbarItem(placement: .primaryAction) {
-                Button(action: { 
-                    print("Add Repository button tapped")
-                    showingForm = true 
-                }) {
-                    Label("Add Repository", systemImage: "plus")
+            .listStyle(.inset)
+            .refreshable {
+                await viewModel.refreshRepositories()
+            }
+            .overlay {
+                if viewModel.isLoading {
+                    ProgressView()
                 }
             }
-        })
-        .sheet(isPresented: $showingForm, onDismiss: {
-            print("Repository form dismissed")
-        }) {
-            RepositoryForm(viewModel: viewModel)
-                .onAppear {
-                    print("Repository form appeared")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: { showingForm = true }) {
+                        Label("Add Repository", systemImage: "plus")
+                    }
                 }
+            }
+        }
+        .sheet(isPresented: $showingForm) {
+            RepositoryForm(viewModel: viewModel)
         }
         .alert("Error", isPresented: $showingError) {
             Button("OK", role: .cancel) {}
@@ -48,15 +68,15 @@ struct RepositoryView: View {
         }
         .alert("Delete Repository", isPresented: $showingDeleteAlert) {
             Button("Delete", role: .destructive) {
-                if let repository = selectedRepository {
+                if let repository = viewModel.selectedRepository {
                     Task {
                         await viewModel.deleteRepository(repository)
                     }
                 }
-                selectedRepository = nil
+                viewModel.selectRepository(nil)
             }
             Button("Cancel", role: .cancel) {
-                selectedRepository = nil
+                viewModel.selectRepository(nil)
             }
         } message: {
             Text("Are you sure you want to delete this repository? This action cannot be undone.")
@@ -82,41 +102,32 @@ struct RepositoryView: View {
             .buttonStyle(.borderedProminent)
         }
     }
+}
+
+struct RepositoryRowView: View {
+    let repository: Repository
+    let isSelected: Bool
     
-    private var repositoryListView: some View {
-        ForEach(viewModel.repositories) { repository in
-            NavigationLink(destination: RepositoryDetailView(repository: repository, viewModel: viewModel)) {
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text(repository.name)
-                            .font(.headline)
-                        Text(repository.path.path)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        if let lastBackup = repository.lastBackup {
-                            Text("Last backup: \(lastBackup.formatted())")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    // Status indicator
-                    Image(systemName: "circle.fill")
-                        .foregroundColor(.green)
-                        .font(.system(size: 8))
-                }
-                .padding(.vertical, 4)
-            }
-            .swipeActions(edge: .trailing) {
-                Button(role: .destructive) {
-                    selectedRepository = repository
-                    showingDeleteAlert = true
-                } label: {
-                    Label("Delete", systemImage: "trash")
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(repository.name)
+                    .font(.headline)
+                Text(repository.path.path)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                if let lastBackup = repository.lastBackup {
+                    Text("Last backup: \(lastBackup.formatted())")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
             }
+            Spacer()
+            Image(systemName: "circle.fill")
+                .foregroundColor(.green)
+                .font(.system(size: 8))
+                .opacity(isSelected ? 1 : 0.5)
         }
+        .padding(.vertical, 4)
     }
 }
