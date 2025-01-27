@@ -1,14 +1,12 @@
 import Foundation
 import os
 
-/// Protocol for process execution output handling
-protocol ProcessOutputHandler {
+protocol ProcessOutputHandler: AnyObject {
     func handleOutput(_ line: String) async
     func handleError(_ line: String) async
     func handleComplete(_ exitCode: Int32) async
 }
 
-/// Result type for process execution
 struct ProcessResult {
     let output: String
     let error: String
@@ -19,17 +17,23 @@ struct ProcessResult {
     }
 }
 
-/// Error types for process execution
-struct ProcessError: LocalizedError {
-    let message: String
-    let exitCode: Int32
+enum ProcessError: LocalizedError {
+    case executionFailed(exitCode: Int32, message: String)
+    case processStartFailed(message: String)
+    case timeout(duration: TimeInterval)
     
     var errorDescription: String? {
-        message
+        switch self {
+        case .executionFailed(let code, let message):
+            return "Process failed with exit code \(code): \(message)"
+        case .processStartFailed(let message):
+            return "Failed to start process: \(message)"
+        case .timeout(let duration):
+            return "Process timed out after \(Int(duration)) seconds"
+        }
     }
 }
 
-/// Data collector for process output
 actor DataCollector {
     private var data = Data()
     
@@ -42,195 +46,46 @@ actor DataCollector {
     }
 }
 
-/// Utility class for executing shell commands
 actor ProcessExecutor {
-    internal var outputHandler: ProcessOutputHandler?
     private let defaultTimeout: TimeInterval = 300 // 5 minutes default timeout
-    
-    init(outputHandler: ProcessOutputHandler? = nil) {
-        self.outputHandler = outputHandler
-    }
+    private var outputHandler: ProcessOutputHandler?
     
     /// Execute a command and return the result
     /// - Parameters:
     ///   - executable: The command to execute
     ///   - arguments: Array of arguments
     ///   - environment: Optional environment variables
+    ///   - outputHandler: Optional handler for process output
     ///   - currentDirectoryURL: Working directory for the process
     ///   - timeout: Optional timeout duration
     /// - Returns: ProcessResult containing output and exit code
+    /// - Throws: ProcessError if execution fails
     func execute(
         _ executable: String,
         arguments: [String],
-        environment: [String: String]? = nil,
+        environment: [String: String],
+        outputHandler: ProcessOutputHandler? = nil,
         currentDirectoryURL: URL? = nil,
         timeout: TimeInterval? = nil
     ) async throws -> ProcessResult {
         AppLogger.info("Executing command: \(executable) \(arguments.joined(separator: " "))", category: .process)
         
-        let process = Process()
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
+        let process: Process = Process()
+        let outputPipe: Pipe = Pipe()
+        let errorPipe: Pipe = Pipe()
         
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = [executable] + arguments
         process.standardOutput = outputPipe
         process.standardError = errorPipe
-        
-        if let env = environment {
-            process.environment = env
-        }
-        
-        if let workingDirectory = currentDirectoryURL {
-            process.currentDirectoryURL = workingDirectory
-        }
-        
-        let outputCollector = DataCollector()
-        let errorCollector = DataCollector()
-        
-        // Setup output handling
-        let outputStream = outputPipe.fileHandleForReading
-        let errorStream = errorPipe.fileHandleForReading
-        
-        outputStream.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            Task {
-                await outputCollector.append(data)
-                if let str = String(data: data, encoding: .utf8) {
-                    await self?.outputHandler?.handleOutput(str)
-                    AppLogger.debug("Process output: \(str)", category: .process)
-                }
-            }
-        }
-        
-        errorStream.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            Task {
-                await errorCollector.append(data)
-                if let str = String(data: data, encoding: .utf8) {
-                    await self?.outputHandler?.handleError(str)
-                    AppLogger.error("Process error: \(str)", category: .process)
-                }
-            }
-        }
-        
-        // Start process with timeout
-        try process.run()
-        
-        let timeoutDuration = timeout ?? defaultTimeout
-        let startTime = Date()
-        
-        while process.isRunning {
-            try await Task.sleep(nanoseconds: 100_000_000) // 100ms check interval
-            
-            if Date().timeIntervalSince(startTime) > timeoutDuration {
-                do {
-                    try cleanup(process, outputStream, errorStream)
-                } catch {
-                    AppLogger.error("Cleanup failed during timeout: \(error.localizedDescription)", category: .process)
-                }
-                AppLogger.error("Process timed out after \(timeoutDuration) seconds", category: .process)
-                throw ProcessError(message: "The operation timed out after \(Int(timeoutDuration)) seconds. Please try again or increase the timeout duration.", exitCode: -1)
-            }
-        }
-        
-        // Clean up file handles
-        do {
-            try cleanup(process, outputStream, errorStream)
-        } catch {
-            AppLogger.error("Cleanup failed after process completion: \(error.localizedDescription)", category: .process)
-        }
-        
-        guard process.terminationStatus == 0 else {
-            AppLogger.error("Process failed with exit code: \(process.terminationStatus)", category: .process)
-            throw ProcessError(message: "Process failed with exit code: \(process.terminationStatus)", exitCode: process.terminationStatus)
-        }
-        
-        AppLogger.info("Command completed successfully", category: .process)
-        await outputHandler?.handleComplete(process.terminationStatus)
-        return ProcessResult(
-            output: await outputCollector.toString(),
-            error: await errorCollector.toString(),
-            exitCode: process.terminationStatus
-        )
-    }
-    
-    private func cleanup(_ process: Process, _ outputStream: FileHandle, _ errorStream: FileHandle) throws {
-        outputStream.readabilityHandler = nil
-        errorStream.readabilityHandler = nil
-        
-        if process.isRunning {
-            process.terminate()
-        }
-        
-        do {
-            try outputStream.close()
-            try errorStream.close()
-        } catch {
-            AppLogger.error("Failed to clean up process resources: \(error.localizedDescription)", category: .process)
-            throw ProcessError(message: "Failed to clean up process resources", exitCode: -1)
-        }
-    }
-    
-    /// Execute a command and stream its output line by line
-    /// - Parameters:
-    ///   - command: The command to execute
-    ///   - arguments: Array of arguments
-    ///   - environment: Optional environment variables
-    ///   - currentDirectoryURL: Working directory for the process
-    /// - Returns: AsyncStream of output lines
-    func executeWithStream(
-        command: String,
-        arguments: [String],
-        environment: [String: String]? = nil,
-        currentDirectoryURL: URL? = nil
-    ) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    let result = try await execute(
-                        command,
-                        arguments: arguments,
-                        environment: environment,
-                        currentDirectoryURL: currentDirectoryURL
-                    )
-                    
-                    result.output.split(separator: "\n").forEach { line in
-                        continuation.yield(String(line))
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-        }
-    }
-    
-    /// Execute a command and return the result
-    /// - Parameters:
-    ///   - executable: The command to execute
-    ///   - arguments: Array of arguments
-    ///   - environment: Optional environment variables
-    /// - Returns: ProcessResult containing output and exit code
-    func execute(
-        _ executable: String,
-        arguments: [String],
-        environment: [String: String]
-    ) async throws -> ProcessResult {
-        AppLogger.info("Executing command: \(executable) \(arguments.joined(separator: " "))", category: .process)
-        
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [executable] + arguments
         process.environment = environment
         
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
+        if let cwd = currentDirectoryURL {
+            process.currentDirectoryURL = cwd
+        }
         
-        let outputCollector = DataCollector()
-        let errorCollector = DataCollector()
+        let outputCollector: DataCollector = DataCollector()
+        let errorCollector: DataCollector = DataCollector()
         
         do {
             try process.run()
@@ -239,6 +94,7 @@ actor ProcessExecutor {
                 group.addTask {
                     for try await line in outputPipe.fileHandleForReading.bytes.lines {
                         await outputCollector.append(line.data(using: .utf8) ?? Data())
+                        await outputHandler?.handleOutput(line)
                         AppLogger.debug("Process output: \(line)", category: .process)
                     }
                 }
@@ -246,7 +102,18 @@ actor ProcessExecutor {
                 group.addTask {
                     for try await line in errorPipe.fileHandleForReading.bytes.lines {
                         await errorCollector.append(line.data(using: .utf8) ?? Data())
+                        await outputHandler?.handleError(line)
                         AppLogger.error("Process error: \(line)", category: .process)
+                    }
+                }
+                
+                if let timeoutDuration = timeout {
+                    group.addTask {
+                        try await Task.sleep(nanoseconds: UInt64(timeoutDuration * 1_000_000_000))
+                        if process.isRunning {
+                            process.terminate()
+                            throw ProcessError.timeout(duration: timeoutDuration)
+                        }
                     }
                 }
                 
@@ -263,14 +130,19 @@ actor ProcessExecutor {
             
             if !result.isSuccess {
                 AppLogger.error("Process failed with exit code: \(result.exitCode)", category: .process)
-            } else {
-                AppLogger.info("Command completed successfully", category: .process)
+                throw ProcessError.executionFailed(exitCode: result.exitCode, message: result.error)
             }
             
+            AppLogger.info("Command completed successfully", category: .process)
+            await outputHandler?.handleComplete(process.terminationStatus)
             return result
+            
+        } catch let error as ProcessError {
+            AppLogger.error("Process error: \(error.localizedDescription)", category: .process)
+            throw error
         } catch {
             AppLogger.error("Process execution failed: \(error.localizedDescription)", category: .process)
-            throw ProcessError(message: error.localizedDescription, exitCode: -1)
+            throw ProcessError.processStartFailed(message: error.localizedDescription)
         }
     }
 }

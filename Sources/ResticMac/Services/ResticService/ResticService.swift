@@ -30,14 +30,11 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
     
     func verifyInstallation() async throws {
         do {
-            let result = try await executor.execute(
+            _ = try await executor.execute(
                 "restic",
                 arguments: ["version"],
                 environment: [:]
             )
-            if !result.isSuccess {
-                throw ResticError.notInstalled
-            }
         } catch {
             AppLogger.error("Failed to verify Restic installation: \(error.localizedDescription)", category: .process)
             throw ResticError.notInstalled
@@ -91,18 +88,17 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
                 arguments: command.arguments,
                 environment: command.environment
             )
-            
-            if !result.isSuccess {
-                AppLogger.error("Command failed: \(command.executable) with code \(result.exitCode)", category: .process)
-                throw ResticError.commandFailed(code: Int(result.exitCode), message: result.error)
-            }
-            
             return result.output
         } catch let error as ProcessError {
-            AppLogger.error("Process execution failed: \(error.localizedDescription)", category: .process)
-            throw ResticError.commandExecutionFailed(error)
+            switch error {
+            case .executionFailed(let code, let message):
+                throw ResticError.commandFailed(code: Int(code), message: message)
+            case .processStartFailed(let message):
+                throw ResticError.commandExecutionFailed(ProcessError.processStartFailed(message: message))
+            case .timeout:
+                throw ResticError.commandExecutionFailed(error)
+            }
         } catch {
-            AppLogger.error("Unexpected error: \(error.localizedDescription)", category: .process)
             throw ResticError.unknown(error.localizedDescription)
         }
     }
