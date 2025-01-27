@@ -46,7 +46,8 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
         var validationErrors: [String] = []
         
         // Validate name
-        if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedName.isEmpty {
             validationErrors.append("Repository name cannot be empty")
         }
         
@@ -62,10 +63,7 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
             }
         } else if !isDirectory.boolValue {
             validationErrors.append("Repository path must be a directory")
-        }
-        
-        // Check write permissions
-        if !fileManager.isWritableFile(atPath: path.path) {
+        } else if !fileManager.isWritableFile(atPath: path.path) {
             validationErrors.append("Repository directory is not writable")
         }
         
@@ -74,33 +72,37 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
             validationErrors.append("Password must be at least 8 characters long")
         }
         
-        // Check for existing repository
-        if fileManager.fileExists(atPath: path.appendingPathComponent("config").path) {
-            validationErrors.append("A repository already exists at this location")
-        }
-        
         if !validationErrors.isEmpty {
-            throw ResticError.repositoryInvalid(validationErrors)
+            throw ResticError.validationFailed(errors: validationErrors)
         }
         
-        // Create repository
+        // Initialize repository
         do {
+            AppLogger.info("Initializing repository at \(path.path)", category: .repository)
+            await displayViewModel?.appendCommand("Initialising repository...")
+            
             let command = ResticCommand.initialize(repository: path, password: password)
             _ = try await executeCommand(command)
             
-            // Create and store repository
-            let repository = Repository(name: name, path: path)
+            // Create and return repository
+            let repository = Repository(
+                id: UUID(),
+                name: trimmedName,
+                path: path,
+                createdAt: Date(),
+                lastBackup: nil
+            )
+            
+            // Store password securely
             try repository.storePassword(password)
             
-            AppLogger.info("Successfully initialized repository at \(path.path)", category: .repository)
-            return repository
+            await displayViewModel?.appendOutput("Repository initialised successfully")
+            AppLogger.info("Repository initialized successfully at \(path.path)", category: .repository)
             
-        } catch let error as ProcessError {
-            AppLogger.error("Failed to initialize repository: \(error.localizedDescription)", category: .repository)
-            throw ResticError.initializationFailed(error.localizedDescription)
+            return repository
         } catch {
-            AppLogger.error("Unexpected error during repository initialization: \(error.localizedDescription)", category: .repository)
-            throw ResticError.unknown(error.localizedDescription)
+            AppLogger.error("Failed to initialize repository: \(error.localizedDescription)", category: .repository)
+            throw ResticError.initializationFailed(underlying: error)
         }
     }
     

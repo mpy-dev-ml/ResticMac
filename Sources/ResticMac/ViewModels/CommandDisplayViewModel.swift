@@ -21,37 +21,41 @@ final class CommandDisplayViewModel: ObservableObject {
     
     private let maxLines = 1000
     
-    func start() {
+    func start() async {
         isRunning = true
         progress = 0
         output.removeAll()
         AppLogger.info("Command execution started", category: .process)
     }
     
-    func finish() {
+    func finish() async {
         isRunning = false
         progress = 100
         AppLogger.info("Command execution completed", category: .process)
     }
     
-    func updateProgress(_ percentage: Double) {
+    func updateProgress(_ percentage: Double) async {
         progress = percentage
     }
     
-    func appendOutput(_ line: String) {
-        appendLine(line, type: .standard)
+    func appendOutput(_ line: String) async {
+        await appendLine(line, type: .standard)
     }
     
-    func appendError(_ line: String) {
-        appendLine(line, type: .error)
+    func appendError(_ line: String) async {
+        await appendLine(line, type: .error)
     }
     
-    private func appendLine(_ line: String, type: OutputType) {
+    private func appendLine(_ line: String, type: OutputType) async {
         output.append(OutputLine(text: line, type: type, timestamp: Date()))
         
-        // Trim old lines if we exceed maxLines
         if output.count > maxLines {
             output.removeFirst(output.count - maxLines)
         }
+    }
+    
+    func appendCommand(_ command: String) async {
+        await appendLine("> \(command)", type: .standard)
+        AppLogger.info("Executing command: \(command)", category: .process)
     }
 }

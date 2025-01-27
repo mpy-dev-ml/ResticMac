@@ -6,6 +6,7 @@ struct Repository: Identifiable, Codable, Hashable {
     let name: String
     let path: URL
     let createdAt: Date
+    var lastBackup: Date?
     
     // Mark keychain as transient since it's not Codable
     private var keychain: Keychain {
@@ -17,6 +18,15 @@ struct Repository: Identifiable, Codable, Hashable {
         self.name = name
         self.path = path
         self.createdAt = Date()
+        self.lastBackup = nil
+    }
+    
+    init(id: UUID = UUID(), name: String, path: URL, createdAt: Date, lastBackup: Date?) {
+        self.id = id
+        self.name = name
+        self.path = path
+        self.createdAt = createdAt
+        self.lastBackup = lastBackup
     }
     
     func hash(into hasher: inout Hasher) {

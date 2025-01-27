@@ -31,53 +31,31 @@ struct JSONOutputFormat: OutputFormat {
 // MARK: - Command Output Handler
 
 /// Handles and processes output from Restic commands
+@MainActor
 final class CommandOutputHandler: ProcessOutputHandler {
     private weak var displayViewModel: CommandDisplayViewModel?
     
     init(displayViewModel: CommandDisplayViewModel?) {
         self.displayViewModel = displayViewModel
-        Task { @MainActor in
-            displayViewModel?.start()
+        Task {
+            await displayViewModel?.start()
         }
     }
     
     func handleOutput(_ line: String) async {
-        for subline in line.split(separator: "\n") {
-            let lineStr = String(subline)
-            await displayViewModel?.appendOutput(lineStr)
-            AppLogger.debug("Command output: \(lineStr)", category: .process)
-            
-            // Check for progress information
-            if let progress = parseProgress(from: lineStr) {
-                await displayViewModel?.updateProgress(progress)
-            }
-        }
+        await displayViewModel?.appendOutput(line)
     }
     
     func handleError(_ line: String) async {
-        for subline in line.split(separator: "\n") {
-            let lineStr = String(subline)
-            await displayViewModel?.appendOutput(lineStr)
-            AppLogger.error("Command error: \(lineStr)", category: .process)
-        }
+        await displayViewModel?.appendError(line)
     }
     
     func handleComplete(_ exitCode: Int32) async {
         await displayViewModel?.finish()
-        AppLogger.info("Command completed with exit code: \(exitCode)", category: .process)
     }
     
-    private func parseProgress(from line: String) -> Double? {
-        // Example progress line: "[42.32%] 12 / 100 files"
-        let progressPattern = #"\[(\d+\.\d+)%\]"#
-        
-        guard let range = line.range(of: progressPattern, options: .regularExpression),
-              let percentStr = line[range].split(separator: "%").first?.dropFirst(),
-              let percent = Double(percentStr) else {
-            return nil
-        }
-        
-        return percent
+    func updateProgress(_ percentage: Double) async {
+        await displayViewModel?.updateProgress(percentage)
     }
 }
 
