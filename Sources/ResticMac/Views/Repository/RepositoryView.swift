@@ -8,6 +8,7 @@ struct RepositoryView: View {
     @State private var selectedRepository: Repository?
     
     init(resticService: ResticServiceProtocol, commandDisplay: CommandDisplayViewModel) {
+        print("Initializing RepositoryView")
         _viewModel = StateObject(wrappedValue: RepositoryViewModel(resticService: resticService, commandDisplay: commandDisplay))
     }
     
@@ -24,13 +25,21 @@ struct RepositoryView: View {
         }
         .toolbar(content: {
             ToolbarItem(placement: .primaryAction) {
-                Button(action: { showingForm = true }) {
+                Button(action: { 
+                    print("Add Repository button tapped")
+                    showingForm = true 
+                }) {
                     Label("Add Repository", systemImage: "plus")
                 }
             }
         })
-        .sheet(isPresented: $showingForm) {
+        .sheet(isPresented: $showingForm, onDismiss: {
+            print("Repository form dismissed")
+        }) {
             RepositoryForm(viewModel: viewModel)
+                .onAppear {
+                    print("Repository form appeared")
+                }
         }
         .alert("Error", isPresented: $showingError) {
             Button("OK", role: .cancel) {}

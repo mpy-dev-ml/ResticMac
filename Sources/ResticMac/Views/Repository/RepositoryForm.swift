@@ -1,4 +1,81 @@
 import SwiftUI
+import AppKit
+
+struct MacTextField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    
+    func makeNSView(context: Context) -> NSTextField {
+        let textField = NSTextField()
+        textField.placeholderString = placeholder
+        textField.delegate = context.coordinator
+        textField.bezelStyle = .roundedBezel
+        textField.isEditable = true
+        textField.isSelectable = true
+        return textField
+    }
+    
+    func updateNSView(_ nsView: NSTextField, context: Context) {
+        nsView.stringValue = text
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+    
+    class Coordinator: NSObject, NSTextFieldDelegate {
+        var text: Binding<String>
+        
+        init(text: Binding<String>) {
+            self.text = text
+        }
+        
+        func controlTextDidChange(_ obj: Notification) {
+            if let textField = obj.object as? NSTextField {
+                text.wrappedValue = textField.stringValue
+                print("Text changed to: \(textField.stringValue)")
+            }
+        }
+    }
+}
+
+struct MacSecureTextField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    
+    func makeNSView(context: Context) -> NSSecureTextField {
+        let textField = NSSecureTextField()
+        textField.placeholderString = placeholder
+        textField.delegate = context.coordinator
+        textField.bezelStyle = .roundedBezel
+        textField.isEditable = true
+        textField.isSelectable = true
+        return textField
+    }
+    
+    func updateNSView(_ nsView: NSSecureTextField, context: Context) {
+        nsView.stringValue = text
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+    
+    class Coordinator: NSObject, NSTextFieldDelegate {
+        var text: Binding<String>
+        
+        init(text: Binding<String>) {
+            self.text = text
+        }
+        
+        func controlTextDidChange(_ obj: Notification) {
+            if let textField = obj.object as? NSSecureTextField {
+                text.wrappedValue = textField.stringValue
+                print("Password field updated")
+            }
+        }
+    }
+}
 
 struct PasswordStrengthIndicator: View {
     let password: String
@@ -88,35 +165,30 @@ struct RepositoryForm: View {
     @State private var showingError = false
     @State private var errorMessage = ""
     
-    private var canCreate: Bool {
-        guard let path = path else { return false }
-        return !name.isEmpty &&
-        viewModel.validatePath(path) &&
-        viewModel.validatePassword(password) &&
-        password == confirmPassword
-    }
-    
     var body: some View {
         NavigationStack {
             Form {
                 Section("Repository Details") {
-                    TextField("Name", text: $name)
-                        .textContentType(.name)
+                    MacTextField(text: $name, placeholder: "Repository Name")
+                        .frame(height: 24)
+                        .onAppear {
+                            print("Name field appeared")
+                        }
                     
                     pathPicker
                 }
                 
                 Section("Security") {
-                    SecureField("Password", text: $password)
-                        .textContentType(.newPassword)
+                    MacSecureTextField(text: $password, placeholder: "Password")
+                        .frame(height: 24)
                     
                     if !password.isEmpty {
                         PasswordStrengthIndicator(password: password)
                             .padding(.vertical, 4)
                     }
                     
-                    SecureField("Confirm Password", text: $confirmPassword)
-                        .textContentType(.newPassword)
+                    MacSecureTextField(text: $confirmPassword, placeholder: "Confirm Password")
+                        .frame(height: 24)
                     
                     if !password.isEmpty && password != confirmPassword {
                         Text("Passwords do not match")
@@ -148,6 +220,7 @@ struct RepositoryForm: View {
                     Button("Cancel") {
                         dismiss()
                     }
+                    .disabled(viewModel.isCreatingRepository)
                 }
                 
                 ToolbarItem(placement: .confirmationAction) {
@@ -157,12 +230,23 @@ struct RepositoryForm: View {
                     .disabled(!canCreate || viewModel.isCreatingRepository)
                 }
             }
+            .alert("Error", isPresented: $showingError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(errorMessage)
+            }
         }
-        .alert("Error", isPresented: $showingError) {
-            Button("OK") { }
-        } message: {
-            Text(errorMessage)
+        .onAppear {
+            print("Form view appeared")
         }
+    }
+    
+    private var canCreate: Bool {
+        guard let path = path else { return false }
+        return !name.isEmpty &&
+        viewModel.validatePath(path) &&
+        viewModel.validatePassword(password) &&
+        password == confirmPassword
     }
     
     private var pathPicker: some View {
