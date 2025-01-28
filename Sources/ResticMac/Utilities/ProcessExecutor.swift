@@ -35,14 +35,31 @@ enum ProcessError: LocalizedError {
 }
 
 actor DataCollector {
-    private var data = Data()
+    private var _data = Data()
     
     func append(_ newData: Data) {
-        data.append(newData)
+        _data.append(newData)
     }
     
-    func toString() -> String {
-        String(data: data, encoding: .utf8) ?? ""
+    func getData() -> Data {
+        _data
+    }
+}
+
+func withTimeout<T>(_ duration: TimeInterval, operation: @escaping () async throws -> T) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask {
+            try await operation()
+        }
+        
+        group.addTask {
+            try await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+            throw ProcessError.timeout(duration: duration)
+        }
+        
+        let result = try await group.next()!
+        group.cancelAll()
+        return result
     }
 }
 
@@ -63,19 +80,19 @@ actor ProcessExecutor {
     func execute(
         _ executable: String,
         arguments: [String],
-        environment: [String: String],
+        environment: [String: String]?,
         outputHandler: ProcessOutputHandler? = nil,
         currentDirectoryURL: URL? = nil,
         timeout: TimeInterval? = nil
     ) async throws -> ProcessResult {
-        AppLogger.info("Executing command: \(executable) \(arguments.joined(separator: " "))", category: .process)
+        AppLogger.shared.info("Executing command: \(executable) \(arguments.joined(separator: " "))")
         
         let process: Process = Process()
         let outputPipe: Pipe = Pipe()
         let errorPipe: Pipe = Pipe()
         
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [executable] + arguments
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
         process.standardOutput = outputPipe
         process.standardError = errorPipe
         process.environment = environment
@@ -87,61 +104,62 @@ actor ProcessExecutor {
         let outputCollector: DataCollector = DataCollector()
         let errorCollector: DataCollector = DataCollector()
         
-        do {
-            try process.run()
-            
-            try await withThrowingTaskGroup(of: Void.self) { group in
-                group.addTask {
-                    for try await line in outputPipe.fileHandleForReading.bytes.lines {
-                        await outputCollector.append(line.data(using: .utf8) ?? Data())
+        // Set up output handling
+        Task {
+            for try await line in outputPipe.fileHandleForReading.bytes.lines {
+                if !line.isEmpty {
+                    if let data = line.data(using: .utf8) {
+                        await outputCollector.append(data)
                         await outputHandler?.handleOutput(line)
-                        AppLogger.debug("Process output: \(line)", category: .process)
+                        AppLogger.shared.debug("Process output: \(line)")
                     }
                 }
-                
-                group.addTask {
-                    for try await line in errorPipe.fileHandleForReading.bytes.lines {
-                        await errorCollector.append(line.data(using: .utf8) ?? Data())
+            }
+        }
+        
+        // Set up error handling
+        Task {
+            for try await line in errorPipe.fileHandleForReading.bytes.lines {
+                if !line.isEmpty {
+                    if let data = line.data(using: .utf8) {
+                        await errorCollector.append(data)
                         await outputHandler?.handleError(line)
-                        AppLogger.error("Process error: \(line)", category: .process)
                     }
                 }
-                
-                if let timeoutDuration = timeout {
-                    group.addTask {
-                        try await Task.sleep(nanoseconds: UInt64(timeoutDuration * 1_000_000_000))
-                        if process.isRunning {
-                            process.terminate()
-                            throw ProcessError.timeout(duration: timeoutDuration)
-                        }
-                    }
+            }
+        }
+        
+        do {
+            if let timeoutDuration = timeout {
+                try await withTimeout(timeoutDuration) {
+                    try process.run()
+                    await process.waitUntilExit()
                 }
-                
-                try await group.waitForAll()
+            } else {
+                try process.run()
+                await process.waitUntilExit()
             }
             
-            process.waitUntilExit()
-            
             let result = ProcessResult(
-                output: await outputCollector.toString(),
-                error: await errorCollector.toString(),
-                exitCode: process.terminationStatus
+                output: String(decoding: await outputCollector.getData(), as: UTF8.self),
+                error: String(decoding: await errorCollector.getData(), as: UTF8.self),
+                exitCode: Int32(process.terminationStatus)
             )
             
             if !result.isSuccess {
-                AppLogger.error("Process failed with exit code: \(result.exitCode)", category: .process)
+                AppLogger.shared.error("Process failed with exit code: \(result.exitCode)")
                 throw ProcessError.executionFailed(exitCode: result.exitCode, message: result.error)
             }
             
-            AppLogger.info("Command completed successfully", category: .process)
+            AppLogger.shared.info("Command completed successfully")
             await outputHandler?.handleComplete(process.terminationStatus)
             return result
             
         } catch let error as ProcessError {
-            AppLogger.error("Process error: \(error.localizedDescription)", category: .process)
+            AppLogger.shared.error("Process error: \(error.localizedDescription)")
             throw error
         } catch {
-            AppLogger.error("Process execution failed: \(error.localizedDescription)", category: .process)
+            AppLogger.shared.error("Process execution failed: \(error.localizedDescription)")
             throw ProcessError.processStartFailed(message: error.localizedDescription)
         }
     }

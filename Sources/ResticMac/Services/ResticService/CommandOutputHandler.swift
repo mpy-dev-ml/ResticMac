@@ -62,12 +62,12 @@ final class CommandOutputHandler: ProcessOutputHandler {
         }
     }
     
-    func handleOutput(_ line: String) async {
-        await displayViewModel?.appendOutput(line)
+    func handleOutput(_ line: String) {
+        displayViewModel?.appendOutput(line)
     }
     
-    func handleError(_ line: String) async {
-        await displayViewModel?.appendError(line)
+    func handleError(_ line: String) {
+        displayViewModel?.appendError(line)
     }
     
     func handleComplete(_ exitCode: Int32) async {

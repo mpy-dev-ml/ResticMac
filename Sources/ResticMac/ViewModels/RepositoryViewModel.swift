@@ -38,10 +38,14 @@ final class RepositoryViewModel: ObservableObject {
     }
     
     func selectRepository(_ repository: Repository?) {
+        AppLogger.shared.debug("RepositoryViewModel: Selecting repository: \(repository?.name ?? "nil")")
         if let repository = repository {
             // Ensure we're using the latest version from our repositories array
-            selectedRepository = repositoryMap[repository.id] ?? repository
+            let updatedRepository = repositoryMap[repository.id] ?? repository
+            AppLogger.shared.debug("RepositoryViewModel: Found repository in map: \(updatedRepository.name)")
+            selectedRepository = updatedRepository
         } else {
+            AppLogger.shared.debug("RepositoryViewModel: Clearing repository selection")
             selectedRepository = nil
         }
         objectWillChange.send()
@@ -129,24 +133,28 @@ final class RepositoryViewModel: ObservableObject {
     }
     
     func deleteRepository(_ repository: Repository) async {
+        AppLogger.shared.debug("RepositoryViewModel: Attempting to delete repository: \(repository.name)")
+        
         // Remove from list first for immediate UI feedback
         if let index = repositories.firstIndex(where: { $0.id == repository.id }) {
             repositories.remove(at: index)
             if selectedRepository?.id == repository.id {
+                AppLogger.shared.debug("RepositoryViewModel: Clearing selection as deleted repository was selected")
                 selectedRepository = nil
             }
         }
         
         do {
-            // Then attempt to delete the actual repository
-            try FileManager.default.removeItem(at: repository.path)
+            try await resticService.deleteRepository(at: repository.path)
+            AppLogger.shared.debug("RepositoryViewModel: Successfully deleted repository: \(repository.name)")
         } catch {
-            self.errorMessage = "Failed to delete repository: \(error.localizedDescription)"
-            self.showError = true
+            // If deletion fails, restore the repository to the list
+            AppLogger.shared.error("RepositoryViewModel: Failed to delete repository: \(error.localizedDescription)")
+            repositories.append(repository)
+            repositories.sort { $0.name < $1.name }
+            errorMessage = "Failed to delete repository: \(error.localizedDescription)"
+            showError = true
         }
-        
-        // Always refresh the list to ensure consistency
-        await scanForRepositories()
     }
     
     func scanForRepositories() async {

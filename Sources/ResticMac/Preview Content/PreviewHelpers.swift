@@ -41,4 +41,8 @@ struct PreviewResticService: ResticServiceProtocol {
     func listSnapshotContents(repository: Repository, snapshot: String, path: String?) async throws -> [SnapshotEntry] {
         return []
     }
+    
+    func deleteRepository(at path: URL) async throws {
+        // Preview implementation - no actual deletion
+    }
 }

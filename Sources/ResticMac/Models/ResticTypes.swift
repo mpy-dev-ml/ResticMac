@@ -11,6 +11,7 @@ enum ResticError: LocalizedError {
     case invalidSnapshot
     case invalidTarget
     case invalidName(String)
+    case deletionFailed(path: URL, underlying: Error)
     
     var errorDescription: String? {
         switch self {
@@ -34,6 +35,8 @@ enum ResticError: LocalizedError {
             return "Invalid restore target path"
         case .invalidName(let message):
             return message
+        case .deletionFailed(let path, let error):
+            return "Failed to delete repository at \(path.path): \(error.localizedDescription)"
         }
     }
 }
@@ -50,7 +53,8 @@ struct ResticCommand {
         case backup(paths: [URL])
         case snapshots
         case restore(snapshot: String, target: URL)
-        case ls(snapshotID: String)
+        case ls(snapshot: String, path: String?)
+        case unlock
         
         var arguments: [String] {
             switch self {
@@ -64,8 +68,14 @@ struct ResticCommand {
                 return ["snapshots", "--json"]
             case .restore(let snapshot, let target):
                 return ["restore", snapshot, "--target", target.path]
-            case .ls(let snapshotID):
-                return ["ls", snapshotID, "--json"]
+            case .ls(let snapshot, let path):
+                if let path = path {
+                    return ["ls", snapshot, path, "--json"]
+                } else {
+                    return ["ls", snapshot, "--json"]
+                }
+            case .unlock:
+                return ["unlock"]
             }
         }
     }

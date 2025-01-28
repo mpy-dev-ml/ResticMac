@@ -25,28 +25,33 @@ final class CommandDisplayViewModel: ObservableObject {
         isRunning = true
         progress = 0
         output.removeAll()
-        AppLogger.info("Command execution started", category: .process)
+        AppLogger.shared.info("Command execution started")
     }
     
     func finish() async {
         isRunning = false
         progress = 100
-        AppLogger.info("Command execution completed", category: .process)
+        AppLogger.shared.info("Command execution completed")
     }
     
     func updateProgress(_ percentage: Double) async {
         progress = percentage
     }
     
-    func appendOutput(_ line: String) async {
-        await appendLine(line, type: .standard)
+    func appendOutput(_ line: String) {
+        Task { @MainActor in
+            appendLine(line, type: .standard)
+        }
     }
     
-    func appendError(_ line: String) async {
-        await appendLine(line, type: .error)
+    func appendError(_ line: String) {
+        Task { @MainActor in
+            appendLine(line, type: .error)
+        }
     }
     
-    private func appendLine(_ line: String, type: OutputType) async {
+    @MainActor
+    private func appendLine(_ line: String, type: OutputType) {
         output.append(OutputLine(text: line, type: type, timestamp: Date()))
         
         if output.count > maxLines {
@@ -54,8 +59,9 @@ final class CommandDisplayViewModel: ObservableObject {
         }
     }
     
-    func appendCommand(_ command: String) async {
-        await appendLine("> \(command)", type: .standard)
-        AppLogger.info("Executing command: \(command)", category: .process)
+    @MainActor
+    func appendCommand(_ command: String) {
+        appendLine("> \(command)", type: .standard)
+        AppLogger.shared.info("Executing command: \(command)")
     }
 }

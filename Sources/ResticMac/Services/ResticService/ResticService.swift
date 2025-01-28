@@ -12,6 +12,7 @@ protocol ResticServiceProtocol {
     func listSnapshots(repository: Repository) async throws -> [Snapshot]
     func restoreSnapshot(repository: Repository, snapshot: String, targetPath: URL) async throws
     func listSnapshotContents(repository: Repository, snapshot: String, path: String?) async throws -> [SnapshotEntry]
+    func deleteRepository(at path: URL) async throws
 }
 
 @MainActor
@@ -30,12 +31,12 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
     func verifyInstallation() async throws {
         do {
             _ = try await executor.execute(
-                "restic",
+                "/usr/local/bin/restic",
                 arguments: ["version"],
                 environment: [:]
             )
         } catch {
-            AppLogger.error("Failed to verify Restic installation: \(error.localizedDescription)", category: .process)
+            AppLogger.shared.error("Failed to verify Restic installation: \(error.localizedDescription)")
             throw ResticError.notInstalled
         }
     }
@@ -68,65 +69,59 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
     }
     
     func scanForRepositories(in directory: URL) async throws -> [RepositoryScanResult] {
-        AppLogger.info("Scanning for repositories in \(directory.path)", category: .repository)
-        await displayViewModel?.appendCommand("Scanning for repositories...")
+        AppLogger.shared.info("Scanning for repositories in \(directory.path)")
+        displayViewModel?.appendCommand("Scanning for repositories...")
         
-        let fileManager = FileManager.default
         var results: [RepositoryScanResult] = []
         
         // Check if the directory itself is a repository
         if let result = try? await scanSingleDirectory(directory) {
             results.append(result)
-            AppLogger.info("Found repository at \(directory.path)", category: .repository)
+            AppLogger.shared.info("Found repository at \(directory.path)")
         }
         
         // Get contents of directory
-        guard let enumerator = fileManager.enumerator(
+        guard let enumerator = FileManager.default.enumerator(
             at: directory,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else {
-            AppLogger.warning("Failed to enumerate directory \(directory.path)", category: .repository)
+            AppLogger.shared.warning("Failed to enumerate directory \(directory.path)")
             return results
         }
         
-        // Scan each subdirectory
         for case let fileURL as URL in enumerator {
-            guard try fileURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else { continue }
-            
-            // Skip if we've already found it as a repository
-            if results.contains(where: { $0.path == fileURL }) { continue }
+            guard try fileURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else {
+                continue
+            }
             
             if let result = try? await scanSingleDirectory(fileURL) {
                 results.append(result)
-                AppLogger.info("Found repository at \(fileURL.path)", category: .repository)
+                AppLogger.shared.info("Found repository at \(fileURL.path)")
             }
         }
         
-        await displayViewModel?.appendOutput("Found \(results.count) repositories")
         return results
     }
     
-    private func scanSingleDirectory(_ url: URL) async throws -> RepositoryScanResult? {
-        // Check for config file
-        let configPath = url.appendingPathComponent("config")
-        guard FileManager.default.fileExists(atPath: configPath.path) else {
-            return nil
-        }
-        
-        // Try to check repository status
+    private func scanSingleDirectory(_ url: URL) async throws -> RepositoryScanResult {
         do {
-            let tempRepo = Repository(name: url.lastPathComponent, path: url)
-            let status = try await checkRepository(repository: tempRepo)
-            let snapshots = try? await listSnapshots(repository: tempRepo)
+            let command = ResticCommand(
+                repository: url,
+                password: "",
+                operation: .snapshots
+            )
+            
+            let output = try await executeCommand(command)
+            let snapshots = try parseSnapshotsOutput(output)
             
             return RepositoryScanResult(
                 path: url,
-                isValid: status.isValid,
+                isValid: true,
                 snapshots: snapshots
             )
         } catch {
-            AppLogger.error("Failed to scan repository at \(url.path): \(error.localizedDescription)", category: .repository)
+            AppLogger.shared.error("Failed to scan repository at \(url.path): \(error.localizedDescription)")
             return RepositoryScanResult(path: url, isValid: false)
         }
     }
@@ -182,62 +177,51 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
         let command = ResticCommand(
             repository: repository.path,
             password: try repository.retrievePassword(),
-            operation: .ls(snapshotID: snapshot)
+            operation: .ls(snapshot: snapshot, path: path)
         )
         let output = try await executeCommand(command)
-        return try parseSnapshotContents(output)
+        return try JSONDecoder().decode([SnapshotEntry].self, from: output.data(using: .utf8) ?? Data())
+    }
+    
+    func deleteRepository(at path: URL) async throws {
+        AppLogger.shared.debug("Attempting to delete repository at \(path.path)")
+        
+        do {
+            // First, try to unlock the repository to ensure it exists and is accessible
+            let command = ResticCommand(
+                repository: path,
+                password: "", // Empty password for unlock
+                operation: .unlock
+            )
+            
+            let _ = try await executeCommand(command)
+            
+            // Then remove the repository directory
+            try FileManager.default.removeItem(at: path)
+            AppLogger.shared.debug("Successfully deleted repository at \(path.path)")
+        } catch {
+            AppLogger.shared.error("Failed to delete repository: \(error.localizedDescription)")
+            throw ResticError.deletionFailed(path: path, underlying: error)
+        }
     }
     
     private func executeCommand(_ command: ResticCommand) async throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: command.executable)
-        process.arguments = command.arguments
-        process.environment = command.environment
+        AppLogger.shared.debug("Executing command: \(command.executable) \(command.arguments.joined(separator: " "))")
+        let result = try await executor.execute(
+            command.executable,
+            arguments: command.arguments,
+            environment: command.environment
+        )
         
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-        
-        try process.run()
-        
-        let outputData = try await withCheckedThrowingContinuation { continuation in
-            outputPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if data.isEmpty {
-                    handle.readabilityHandler = nil
-                    continuation.resume(returning: handle.availableData)
-                }
-            }
-        }
-        
-        let errorData = try await withCheckedThrowingContinuation { continuation in
-            errorPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if data.isEmpty {
-                    handle.readabilityHandler = nil
-                    continuation.resume(returning: handle.availableData)
-                }
-            }
-        }
-        
-        try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async {
-                process.waitUntilExit()
-                continuation.resume()
-            }
-        }
-        
-        if process.terminationStatus != 0 {
-            let errorMessage = String(decoding: errorData, as: UTF8.self)
+        if !result.isSuccess {
             throw ResticError.commandFailed(underlying: NSError(
                 domain: "ResticError",
-                code: Int(process.terminationStatus),
-                userInfo: [NSLocalizedDescriptionKey: errorMessage]
+                code: Int(result.exitCode),
+                userInfo: [NSLocalizedDescriptionKey: result.error]
             ))
         }
         
-        return String(decoding: outputData, as: UTF8.self)
+        return result.output
     }
     
     private func parseSnapshotsOutput(_ output: String) throws -> [Snapshot] {
@@ -251,7 +235,7 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
     }
     
     deinit {
-        AppLogger.debug("ResticService deinitialised", category: .process)
+        AppLogger.shared.debug("ResticService deinitialised")
     }
 }
 
