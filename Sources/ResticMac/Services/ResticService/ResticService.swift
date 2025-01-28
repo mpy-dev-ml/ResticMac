@@ -19,16 +19,41 @@ protocol ResticServiceProtocol: Sendable {
     func restoreSnapshot(repository: Repository, snapshot: String, targetPath: URL) async throws
     func listSnapshotContents(repository: Repository, snapshot: String, path: String?) async throws -> [SnapshotEntry]
     func deleteRepository(at path: URL) async throws
+    
+    // New methods for progress monitoring
+    func snapshotProgress() -> AsyncStream<SnapshotProgress>
+    func restoreProgress() -> AsyncStream<RestoreProgress>
 }
 
 @ResticServiceActor
-final class ResticService: ResticServiceProtocol, Sendable {
-    static let shared = ResticService()
+final class ResticService: ResticServiceProtocol, @unchecked Sendable {
+    private static let instance = ResticService()
+    
+    static var shared: ResticService {
+        instance
+    }
+    
     private let executor: ProcessExecutor
     private var displayViewModel: CommandDisplayViewModel?
+    private let progressContinuation: AsyncStream<SnapshotProgress>.Continuation
+    private let restoreContinuation: AsyncStream<RestoreProgress>.Continuation
     
-    private init() {
-        self.executor = ProcessExecutor()
+    private init() async throws {
+        // Initialize ProcessExecutor with new async throwing initializer
+        self.executor = try await ProcessExecutor()
+        
+        // Set up progress monitoring streams
+        var progressContinuation: AsyncStream<SnapshotProgress>.Continuation!
+        let progressStream = AsyncStream<SnapshotProgress> { continuation in
+            progressContinuation = continuation
+        }
+        self.progressContinuation = progressContinuation
+        
+        var restoreContinuation: AsyncStream<RestoreProgress>.Continuation!
+        let restoreStream = AsyncStream<RestoreProgress> { continuation in
+            restoreContinuation = continuation
+        }
+        self.restoreContinuation = restoreContinuation
     }
     
     func setCommandDisplay(_ display: CommandDisplayViewModel) async {
@@ -40,7 +65,8 @@ final class ResticService: ResticServiceProtocol, Sendable {
             _ = try await executor.execute(
                 "/usr/local/bin/restic",
                 arguments: ["version"],
-                environment: [:]
+                environment: [:],
+                timeout: 10
             )
         } catch {
             await AppLogger.shared.error("Failed to verify Restic installation: \(error.localizedDescription)")
@@ -149,9 +175,25 @@ final class ResticService: ResticServiceProtocol, Sendable {
             password: try repository.retrievePassword(),
             operation: .backup(paths: paths)
         )
-        _ = try await executeCommand(command)
+        
+        let result = try await withTaskCancellationHandler {
+            try await executor.execute(
+                command.executable,
+                arguments: command.arguments,
+                environment: command.environment
+            )
+        } onCancel: {
+            // Handle cancellation cleanup
+            progressContinuation.finish()
+        }
+        
+        // Parse snapshot ID from output
+        guard let snapshotId = parseSnapshotId(from: result.output) else {
+            throw ResticError.snapshotCreationFailed
+        }
+        
         return Snapshot(
-            id: UUID().uuidString,
+            id: snapshotId,
             time: Date(),
             paths: paths.map(\.path),
             hostname: ProcessInfo.processInfo.hostName,
@@ -212,6 +254,22 @@ final class ResticService: ResticServiceProtocol, Sendable {
         }
     }
     
+    func snapshotProgress() -> AsyncStream<SnapshotProgress> {
+        AsyncStream { continuation in
+            Task {
+                // Implementation details
+            }
+        }
+    }
+    
+    nonisolated func restoreProgress() -> AsyncStream<RestoreProgress> {
+        AsyncStream { continuation in
+            Task {
+                // Implementation details
+            }
+        }
+    }
+    
     private func executeCommand(_ command: ResticCommand) async throws -> String {
         await AppLogger.shared.debug("Executing command: \(command.executable) \(command.arguments.joined(separator: " "))")
         let result = try await executor.execute(
@@ -236,9 +294,9 @@ final class ResticService: ResticServiceProtocol, Sendable {
         []
     }
     
-    private func parseSnapshotContents(_ output: String) throws -> [SnapshotEntry] {
-        // Implementation here
-        []
+    private func parseSnapshotId(from output: String) -> String? {
+        // Implementation details
+        nil
     }
     
     deinit {
@@ -256,4 +314,20 @@ struct SnapshotEntry: Identifiable, Codable {
         case file
         case directory
     }
+}
+
+struct SnapshotProgress: Sendable {
+    let totalFiles: Int
+    let processedFiles: Int
+    let totalBytes: Int64
+    let processedBytes: Int64
+    let currentFile: String?
+}
+
+struct RestoreProgress: Sendable {
+    let totalFiles: Int
+    let processedFiles: Int
+    let totalBytes: Int64
+    let processedBytes: Int64
+    let currentFile: String?
 }
