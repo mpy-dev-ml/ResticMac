@@ -1,27 +1,38 @@
 import Foundation
-import os
+import Logging
 
-final class AppLogger {
+@globalActor
+public actor AppLoggerActor {
+    public static let shared = AppLoggerActor()
+}
+
+final class AppLogger: @unchecked Sendable {
+    @AppLoggerActor
     static let shared = AppLogger()
+    
     private let logger: Logger
     
     private init() {
-        logger = Logger(subsystem: "com.resticmac", category: "app")
+        logger = Logger(label: "com.resticmac.app")
     }
     
-    func debug(_ message: String) {
-        logger.debug("\(message, privacy: .public)")
+    @AppLoggerActor
+    func debug(_ message: String) async {
+        logger.debug("\(message)")
     }
     
-    func info(_ message: String) {
-        logger.info("\(message, privacy: .public)")
+    @AppLoggerActor
+    func info(_ message: String) async {
+        logger.info("\(message)")
     }
     
-    func warning(_ message: String) {
-        logger.warning("\(message, privacy: .public)")
+    @AppLoggerActor
+    func warning(_ message: String) async {
+        logger.warning("\(message)")
     }
     
-    func error(_ message: String) {
-        logger.error("\(message, privacy: .public)")
+    @AppLoggerActor
+    func error(_ message: String) async {
+        logger.error("\(message)")
     }
 }
