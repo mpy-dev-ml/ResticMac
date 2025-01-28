@@ -1,38 +1,36 @@
 import Foundation
 import Logging
 
-@globalActor
-public actor AppLoggerActor {
-    public static let shared = AppLoggerActor()
-}
-
-final class AppLogger: @unchecked Sendable {
-    @AppLoggerActor
+@MainActor
+final class AppLogger: Sendable {
     static let shared = AppLogger()
-    
     private let logger: Logger
     
     private init() {
-        logger = Logger(label: "com.resticmac.app")
+        self.logger = Logger(label: "com.resticmac.app")
     }
     
-    @AppLoggerActor
-    func debug(_ message: String) async {
-        logger.debug("\(message)")
+    nonisolated func debug(_ message: String) {
+        Task { @MainActor in
+            logger.debug("\(message)")
+        }
     }
     
-    @AppLoggerActor
-    func info(_ message: String) async {
-        logger.info("\(message)")
+    nonisolated func info(_ message: String) {
+        Task { @MainActor in
+            logger.info("\(message)")
+        }
     }
     
-    @AppLoggerActor
-    func warning(_ message: String) async {
-        logger.warning("\(message)")
+    nonisolated func warning(_ message: String) {
+        Task { @MainActor in
+            logger.warning("\(message)")
+        }
     }
     
-    @AppLoggerActor
-    func error(_ message: String) async {
-        logger.error("\(message)")
+    nonisolated func error(_ message: String) {
+        Task { @MainActor in
+            logger.error("\(message)")
+        }
     }
 }

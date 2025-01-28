@@ -53,6 +53,10 @@ struct JSONOutputFormat: OutputFormat {
 /// Handles and processes output from Restic commands
 @MainActor
 final class CommandOutputHandler: ProcessOutputHandler {
+    nonisolated func handleComplete(_ exitCode: Int32) {
+        <#code#>
+    }
+    
     private weak var displayViewModel: CommandDisplayViewModel?
     
     init(displayViewModel: CommandDisplayViewModel?) {

@@ -1,13 +1,12 @@
 import Foundation
-import os
 
-protocol ProcessOutputHandler: AnyObject {
+protocol ProcessOutputHandler: Sendable {
     func handleOutput(_ line: String) async
     func handleError(_ line: String) async
-    func handleComplete(_ exitCode: Int32) async
+    func handleComplete(_ exitCode: Int32)
 }
 
-struct ProcessResult {
+struct ProcessResult: Sendable {
     let output: String
     let error: String
     let exitCode: Int32
@@ -17,7 +16,7 @@ struct ProcessResult {
     }
 }
 
-enum ProcessError: LocalizedError {
+enum ProcessError: LocalizedError, Sendable {
     case executionFailed(exitCode: Int32, message: String)
     case processStartFailed(message: String)
     case timeout(duration: TimeInterval)
@@ -34,38 +33,17 @@ enum ProcessError: LocalizedError {
     }
 }
 
-actor DataCollector {
-    private var _data = Data()
-    
-    func append(_ newData: Data) {
-        _data.append(newData)
-    }
-    
-    func getData() -> Data {
-        _data
-    }
+@globalActor
+actor ProcessExecutorActor {
+    static let shared = ProcessExecutorActor()
 }
 
-func withTimeout<T>(_ duration: TimeInterval, operation: @escaping () async throws -> T) async throws -> T {
-    try await withThrowingTaskGroup(of: T.self) { group in
-        group.addTask {
-            try await operation()
-        }
-        
-        group.addTask {
-            try await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
-            throw ProcessError.timeout(duration: duration)
-        }
-        
-        let result = try await group.next()!
-        group.cancelAll()
-        return result
-    }
-}
-
-actor ProcessExecutor {
+@ProcessExecutorActor
+final class ProcessExecutor: Sendable {
     private let defaultTimeout: TimeInterval = 300 // 5 minutes default timeout
-    private var outputHandler: ProcessOutputHandler?
+    private var outputHandler: (any ProcessOutputHandler)?
+    
+    init() {}
     
     /// Execute a command and return the result
     /// - Parameters:
@@ -80,87 +58,116 @@ actor ProcessExecutor {
     func execute(
         _ executable: String,
         arguments: [String],
-        environment: [String: String]?,
-        outputHandler: ProcessOutputHandler? = nil,
+        environment: [String: String]? = nil,
+        outputHandler: (any ProcessOutputHandler)? = nil,
         currentDirectoryURL: URL? = nil,
         timeout: TimeInterval? = nil
     ) async throws -> ProcessResult {
-        AppLogger.shared.info("Executing command: \(executable) \(arguments.joined(separator: " "))")
+        await AppLogger.shared.info("Executing command: \(executable) \(arguments.joined(separator: " "))")
         
-        let process: Process = Process()
-        let outputPipe: Pipe = Pipe()
-        let errorPipe: Pipe = Pipe()
+        let process = Process()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
         
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         process.standardOutput = outputPipe
         process.standardError = errorPipe
-        process.environment = environment
+        
+        if let env = environment {
+            process.environment = env
+        }
         
         if let cwd = currentDirectoryURL {
             process.currentDirectoryURL = cwd
         }
         
-        let outputCollector: DataCollector = DataCollector()
-        let errorCollector: DataCollector = DataCollector()
-        
-        // Set up output handling
-        Task {
-            for try await line in outputPipe.fileHandleForReading.bytes.lines {
-                if !line.isEmpty {
-                    if let data = line.data(using: .utf8) {
-                        await outputCollector.append(data)
-                        await outputHandler?.handleOutput(line)
-                        AppLogger.shared.debug("Process output: \(line)")
-                    }
+        let outputData = AsyncStream<Data> { continuation in
+            outputPipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                if data.isEmpty {
+                    continuation.finish()
+                } else {
+                    continuation.yield(data)
                 }
             }
         }
         
-        // Set up error handling
-        Task {
-            for try await line in errorPipe.fileHandleForReading.bytes.lines {
-                if !line.isEmpty {
-                    if let data = line.data(using: .utf8) {
-                        await errorCollector.append(data)
-                        await outputHandler?.handleError(line)
-                    }
+        let errorData = AsyncStream<Data> { continuation in
+            errorPipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                if data.isEmpty {
+                    continuation.finish()
+                } else {
+                    continuation.yield(data)
                 }
             }
+        }
+        
+        // Set up output handling tasks
+        let outputTask = Task {
+            var collectedOutput = Data()
+            for await data in outputData {
+                collectedOutput.append(data)
+                if let str = String(data: data, encoding: .utf8) {
+                    await outputHandler?.handleOutput(str)
+                }
+            }
+            return collectedOutput
+        }
+        
+        let errorTask = Task {
+            var collectedError = Data()
+            for await data in errorData {
+                collectedError.append(data)
+                if let str = String(data: data, encoding: .utf8) {
+                    await outputHandler?.handleError(str)
+                }
+            }
+            return collectedError
         }
         
         do {
-            if let timeoutDuration = timeout {
-                try await withTimeout(timeoutDuration) {
-                    try process.run()
-                    await process.waitUntilExit()
-                }
-            } else {
-                try process.run()
-                await process.waitUntilExit()
-            }
-            
-            let result = ProcessResult(
-                output: String(decoding: await outputCollector.getData(), as: UTF8.self),
-                error: String(decoding: await errorCollector.getData(), as: UTF8.self),
-                exitCode: Int32(process.terminationStatus)
-            )
-            
-            if !result.isSuccess {
-                AppLogger.shared.error("Process failed with exit code: \(result.exitCode)")
-                throw ProcessError.executionFailed(exitCode: result.exitCode, message: result.error)
-            }
-            
-            AppLogger.shared.info("Command completed successfully")
-            await outputHandler?.handleComplete(process.terminationStatus)
-            return result
-            
-        } catch let error as ProcessError {
-            AppLogger.shared.error("Process error: \(error.localizedDescription)")
-            throw error
+            try process.run()
         } catch {
-            AppLogger.shared.error("Process execution failed: \(error.localizedDescription)")
             throw ProcessError.processStartFailed(message: error.localizedDescription)
+        }
+        
+        return try await withThrowingTaskGroup(of: ProcessResult.self) { group in
+            group.addTask {
+                process.waitUntilExit()
+                
+                let outputData = await outputTask.value
+                let errorData = await errorTask.value
+                
+                let output = String(data: outputData, encoding: .utf8) ?? ""
+                let error = String(data: errorData, encoding: .utf8) ?? ""
+                
+                outputHandler?.handleComplete(process.terminationStatus)
+                
+                if process.terminationStatus != 0 {
+                    throw ProcessError.executionFailed(
+                        exitCode: process.terminationStatus,
+                        message: error.isEmpty ? output : error
+                    )
+                }
+                
+                return ProcessResult(
+                    output: output,
+                    error: error,
+                    exitCode: process.terminationStatus
+                )
+            }
+            
+            group.addTask { [self] in [self]; in
+                try await Task.sleep(for: .seconds(timeout ?? self.defaultTimeout))
+                process.terminate()
+                throw ProcessError.timeout(duration: timeout ?? self.defaultTimeout)
+            }
+            
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
         }
     }
 }

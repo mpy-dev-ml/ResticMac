@@ -1,8 +1,14 @@
 import Foundation
 import Combine
 import os
+import SwiftShell
 
-protocol ResticServiceProtocol {
+@globalActor
+actor ResticServiceActor {
+    static let shared = ResticServiceActor()
+}
+
+protocol ResticServiceProtocol: Sendable {
     func setCommandDisplay(_ display: CommandDisplayViewModel) async
     func verifyInstallation() async throws
     func initializeRepository(name: String, path: URL) async throws -> Repository
@@ -15,13 +21,14 @@ protocol ResticServiceProtocol {
     func deleteRepository(at path: URL) async throws
 }
 
-@MainActor
-final class ResticService: ResticServiceProtocol, ObservableObject {
+@ResticServiceActor
+final class ResticService: ResticServiceProtocol, Sendable {
+    static let shared = ResticService()
     private let executor: ProcessExecutor
     private var displayViewModel: CommandDisplayViewModel?
     
-    init(executor: ProcessExecutor = ProcessExecutor()) {
-        self.executor = executor
+    private init() {
+        self.executor = ProcessExecutor()
     }
     
     func setCommandDisplay(_ display: CommandDisplayViewModel) async {
@@ -36,7 +43,7 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
                 environment: [:]
             )
         } catch {
-            AppLogger.shared.error("Failed to verify Restic installation: \(error.localizedDescription)")
+            await AppLogger.shared.error("Failed to verify Restic installation: \(error.localizedDescription)")
             throw ResticError.notInstalled
         }
     }
@@ -69,15 +76,15 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
     }
     
     func scanForRepositories(in directory: URL) async throws -> [RepositoryScanResult] {
-        AppLogger.shared.info("Scanning for repositories in \(directory.path)")
-        displayViewModel?.appendCommand("Scanning for repositories...")
+        await AppLogger.shared.info("Scanning for repositories in \(directory.path)")
+        await displayViewModel?.appendCommand("Scanning for repositories...")
         
         var results: [RepositoryScanResult] = []
         
         // Check if the directory itself is a repository
         if let result = try? await scanSingleDirectory(directory) {
             results.append(result)
-            AppLogger.shared.info("Found repository at \(directory.path)")
+            await AppLogger.shared.info("Found repository at \(directory.path)")
         }
         
         // Get contents of directory
@@ -86,7 +93,7 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else {
-            AppLogger.shared.warning("Failed to enumerate directory \(directory.path)")
+            await AppLogger.shared.warning("Failed to enumerate directory \(directory.path)")
             return results
         }
         
@@ -97,7 +104,7 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
             
             if let result = try? await scanSingleDirectory(fileURL) {
                 results.append(result)
-                AppLogger.shared.info("Found repository at \(fileURL.path)")
+                await AppLogger.shared.info("Found repository at \(fileURL.path)")
             }
         }
         
@@ -121,7 +128,7 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
                 snapshots: snapshots
             )
         } catch {
-            AppLogger.shared.error("Failed to scan repository at \(url.path): \(error.localizedDescription)")
+            await AppLogger.shared.error("Failed to scan repository at \(url.path): \(error.localizedDescription)")
             return RepositoryScanResult(path: url, isValid: false)
         }
     }
@@ -184,7 +191,7 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
     }
     
     func deleteRepository(at path: URL) async throws {
-        AppLogger.shared.debug("Attempting to delete repository at \(path.path)")
+        await AppLogger.shared.debug("Attempting to delete repository at \(path.path)")
         
         do {
             // First, try to unlock the repository to ensure it exists and is accessible
@@ -198,15 +205,15 @@ final class ResticService: ResticServiceProtocol, ObservableObject {
             
             // Then remove the repository directory
             try FileManager.default.removeItem(at: path)
-            AppLogger.shared.debug("Successfully deleted repository at \(path.path)")
+            await AppLogger.shared.debug("Successfully deleted repository at \(path.path)")
         } catch {
-            AppLogger.shared.error("Failed to delete repository: \(error.localizedDescription)")
+            await AppLogger.shared.error("Failed to delete repository: \(error.localizedDescription)")
             throw ResticError.deletionFailed(path: path, underlying: error)
         }
     }
     
     private func executeCommand(_ command: ResticCommand) async throws -> String {
-        AppLogger.shared.debug("Executing command: \(command.executable) \(command.arguments.joined(separator: " "))")
+        await AppLogger.shared.debug("Executing command: \(command.executable) \(command.arguments.joined(separator: " "))")
         let result = try await executor.execute(
             command.executable,
             arguments: command.arguments,
