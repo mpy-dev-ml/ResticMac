@@ -1,0 +1,830 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 54;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		000A0361634755A4AEAAFA9C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC3EC14850C27CC2C87D25DA /* ContentView.swift */; };
+		01BE4BE0D37D27596E9D8F3A /* RepositoryViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83324B649D694FF0E8440308 /* RepositoryViewModelTests.swift */; };
+		02C1601B651E545CA71D8767 /* KeychainAccess in Frameworks */ = {isa = PBXBuildFile; productRef = AB1DAACB60D28ABE3A68A6F5 /* KeychainAccess */; };
+		0AFDB5E7E15397C295D0866D /* RepositoryStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87CF7ED3C163D746AB5B88E8 /* RepositoryStorage.swift */; };
+		0BD3E7EE65C23778AEA0A7CB /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = E26C77F37B7D65D34400E48C /* Logging */; };
+		0F87810D420CB1E97D3EB685 /* Repository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EA711C44594320108D87BC4 /* Repository.swift */; };
+		13DB0E884A53D216FEC1C946 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3731511AE963BAA21EF39A87 /* AppDelegate.swift */; };
+		197D73BED4AAC25F945C7B42 /* SwiftShell in Frameworks */ = {isa = PBXBuildFile; productRef = F9100C60E3938C5FAEC3DFA2 /* SwiftShell */; };
+		19E441D76A72F8EF44BE3A32 /* ScanViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43CA20421A8ABB14B1EF62D6 /* ScanViewModel.swift */; };
+		1E2DDC876100566364476A55 /* RepositoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2775A8EFB483EA47C5411BA /* RepositoryView.swift */; };
+		237A1CA04BA052B62AEF48B3 /* ResticServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC680A3497DE37128D202541 /* ResticServiceTests.swift */; };
+		2C3AA570A2D7ADCDDB595747 /* RepositoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B6472E18B5BA95B6B992319 /* RepositoryDetailView.swift */; };
+		323CECB965A9A2BF2BFAF5BE /* ResticMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14619C798B901B563E0EF3B1 /* ResticMacApp.swift */; };
+		3DA58BE2873228CBC35EA817 /* RepositoryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06B6549770E56DE1116440CC /* RepositoryViewModel.swift */; };
+		41B7907E65F0F32D6827FD37 /* BackupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB7D0F4317B24B03FA240C99 /* BackupView.swift */; };
+		43E403995F9D9825267EB30B /* ResticMacTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5193720DA6130F98BAF3B32A /* ResticMacTests.swift */; };
+		4D16161171536492098F37AA /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7666C86EFF52C2CA7F68DB96 /* MainView.swift */; };
+		5576567A49D44B6BE11933DC /* ResticTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C2E2AA6AFFC37805F598CAE /* ResticTypes.swift */; };
+		6916B984D07FC4330868BD0C /* CommandOutputHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2670F7578A7622C0FD6E59D8 /* CommandOutputHandler.swift */; };
+		8765778D2D5FEEFAB0148DB6 /* CommandDisplayViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2850F6AB4899608D3BA0B43 /* CommandDisplayViewModelTests.swift */; };
+		87C71F4EEFFE2641CA91052B /* KeychainAccess in Frameworks */ = {isa = PBXBuildFile; productRef = CC45558CA99456550B1BD7C7 /* KeychainAccess */; };
+		89B38EF1AAB89399523D9A62 /* CommandDisplayViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A08050BCCB11F9FFCAFF6028 /* CommandDisplayViewModel.swift */; };
+		9531407BDBA2929DCA2DDB25 /* MockResticService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 321F2458CF94799F47BE153F /* MockResticService.swift */; };
+		99F1259492E1EEC04B5F0FFC /* SwiftShell in Frameworks */ = {isa = PBXBuildFile; productRef = AF3F30A2A30862558AE69A73 /* SwiftShell */; };
+		9E4305F3506450694C569ED6 /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0E9C309CCACC9C7FEF2394 /* AppLogger.swift */; };
+		9EA99926CA36AEA07833F3A0 /* RepositoryStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8480C34D0697D0654765777F /* RepositoryStatus.swift */; };
+		A5359C456D7303928E393AF7 /* PreviewHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50EBC36DB26FE6B430BB0223 /* PreviewHelpers.swift */; };
+		A7F99BC19035949B2B4B6EF3 /* ScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86D865A74EFBC0BB3BEE5FB7 /* ScanView.swift */; };
+		AF19BCFE862B6A08B05F92C9 /* SnapshotViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C9BB3AE3C4ED202479ABEA2 /* SnapshotViewModel.swift */; };
+		B05ACED9BB6C1ED27186DE0C /* Snapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F746A73B59E87C7492102C0F /* Snapshot.swift */; };
+		B250B56B4BAD486D2732281A /* RepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F77551E4C89D15D477D708B /* RepositoryTests.swift */; };
+		B287DB69122AF82B2D1CF12E /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 864136CB6162CA8E3AC292F7 /* Constants.swift */; };
+		B43B6AB3F492A0B534230302 /* RepositoryForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6D44D35731482E827774552 /* RepositoryForm.swift */; };
+		CA196BA9A18756DF1BC8E85C /* PathSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40EAA5DD1B1CFD2AD1B9F7FF /* PathSelector.swift */; };
+		CE7588C4C04E6709BC125A9C /* BackupViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FA29CA1C371F3E25401791D /* BackupViewModel.swift */; };
+		D4951DA8B5397290C25B2B29 /* RepositoryScanResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = A88FF30F7DE22384F2E149BF /* RepositoryScanResult.swift */; };
+		D7048E3811B77084B289C9C0 /* ProcessExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34BDE9C89C93D2CA57C0D4FA /* ProcessExecutor.swift */; };
+		E5C7C22517CAA8CDC390B4FD /* RepositoryStorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC566DBAB6B125FF911E3226 /* RepositoryStorageTests.swift */; };
+		E69A81A3D7B836B96E30FC31 /* Logging in Frameworks */ = {isa = PBXBuildFile; productRef = 21D965D6DC6EF0B635D66F2D /* Logging */; };
+		E9B6AD8B73DB00218F16E9CE /* ResticService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDED423E47D30F5468E42313 /* ResticService.swift */; };
+		F041CD16EEA5E307DBB0F5BF /* CommandDisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85980609944B62A90FEC53CE /* CommandDisplayView.swift */; };
+		F90FB8A4A628FF7B83EAFE26 /* BackupViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C84B83B19DE8E300D901D51 /* BackupViewModelTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		3DA58E586A77D0D596DB4F8D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7AE5DFCED30BEEFE34EE2B9C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CB2E215CAB5BD22CC6881BB5;
+			remoteInfo = ResticMac;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		06B6549770E56DE1116440CC /* RepositoryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryViewModel.swift; sourceTree = "<group>"; };
+		14619C798B901B563E0EF3B1 /* ResticMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResticMacApp.swift; sourceTree = "<group>"; };
+		2670F7578A7622C0FD6E59D8 /* CommandOutputHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandOutputHandler.swift; sourceTree = "<group>"; };
+		321F2458CF94799F47BE153F /* MockResticService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockResticService.swift; sourceTree = "<group>"; };
+		34BDE9C89C93D2CA57C0D4FA /* ProcessExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessExecutor.swift; sourceTree = "<group>"; };
+		3731511AE963BAA21EF39A87 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		3B6472E18B5BA95B6B992319 /* RepositoryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryDetailView.swift; sourceTree = "<group>"; };
+		3EA711C44594320108D87BC4 /* Repository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Repository.swift; sourceTree = "<group>"; };
+		40EAA5DD1B1CFD2AD1B9F7FF /* PathSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PathSelector.swift; sourceTree = "<group>"; };
+		43CA20421A8ABB14B1EF62D6 /* ScanViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanViewModel.swift; sourceTree = "<group>"; };
+		44D85B7FCF44091635CB031C /* ResticMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ResticMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4C9BB3AE3C4ED202479ABEA2 /* SnapshotViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotViewModel.swift; sourceTree = "<group>"; };
+		50EBC36DB26FE6B430BB0223 /* PreviewHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewHelpers.swift; sourceTree = "<group>"; };
+		5193720DA6130F98BAF3B32A /* ResticMacTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResticMacTests.swift; sourceTree = "<group>"; };
+		6C84B83B19DE8E300D901D51 /* BackupViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupViewModelTests.swift; sourceTree = "<group>"; };
+		7666C86EFF52C2CA7F68DB96 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		7FA29CA1C371F3E25401791D /* BackupViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupViewModel.swift; sourceTree = "<group>"; };
+		83324B649D694FF0E8440308 /* RepositoryViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryViewModelTests.swift; sourceTree = "<group>"; };
+		8480C34D0697D0654765777F /* RepositoryStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryStatus.swift; sourceTree = "<group>"; };
+		85980609944B62A90FEC53CE /* CommandDisplayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandDisplayView.swift; sourceTree = "<group>"; };
+		864136CB6162CA8E3AC292F7 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		86D865A74EFBC0BB3BEE5FB7 /* ScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanView.swift; sourceTree = "<group>"; };
+		87CF7ED3C163D746AB5B88E8 /* RepositoryStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryStorage.swift; sourceTree = "<group>"; };
+		8C2E2AA6AFFC37805F598CAE /* ResticTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResticTypes.swift; sourceTree = "<group>"; };
+		8F77551E4C89D15D477D708B /* RepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryTests.swift; sourceTree = "<group>"; };
+		A08050BCCB11F9FFCAFF6028 /* CommandDisplayViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandDisplayViewModel.swift; sourceTree = "<group>"; };
+		A88FF30F7DE22384F2E149BF /* RepositoryScanResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryScanResult.swift; sourceTree = "<group>"; };
+		B2775A8EFB483EA47C5411BA /* RepositoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryView.swift; sourceTree = "<group>"; };
+		B7C6989A7411DEE159FB5A99 /* ResticMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ResticMac.entitlements; sourceTree = "<group>"; };
+		C05E9FF99DBCD233D86BD822 /* ResticMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ResticMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C6D44D35731482E827774552 /* RepositoryForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryForm.swift; sourceTree = "<group>"; };
+		DB7D0F4317B24B03FA240C99 /* BackupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupView.swift; sourceTree = "<group>"; };
+		DC3EC14850C27CC2C87D25DA /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		DC566DBAB6B125FF911E3226 /* RepositoryStorageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryStorageTests.swift; sourceTree = "<group>"; };
+		DE0E9C309CCACC9C7FEF2394 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
+		E2850F6AB4899608D3BA0B43 /* CommandDisplayViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandDisplayViewModelTests.swift; sourceTree = "<group>"; };
+		F746A73B59E87C7492102C0F /* Snapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snapshot.swift; sourceTree = "<group>"; };
+		FC680A3497DE37128D202541 /* ResticServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResticServiceTests.swift; sourceTree = "<group>"; };
+		FDED423E47D30F5468E42313 /* ResticService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResticService.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		98B1FCF92135CF2F5F849F4A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				197D73BED4AAC25F945C7B42 /* SwiftShell in Frameworks */,
+				0BD3E7EE65C23778AEA0A7CB /* Logging in Frameworks */,
+				87C71F4EEFFE2641CA91052B /* KeychainAccess in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		99351B64F70A8896722E2525 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				99F1259492E1EEC04B5F0FFC /* SwiftShell in Frameworks */,
+				E69A81A3D7B836B96E30FC31 /* Logging in Frameworks */,
+				02C1601B651E545CA71D8767 /* KeychainAccess in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		29ACEC02527CB268C13F611A /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				D0499AA408510E5CD1232DA3 /* Backup */,
+				391FAD8F81FE3FA9EE4B17E9 /* CommandDisplay */,
+				D49B1C20DA01C735EA1E2227 /* Main */,
+				81C84AEEFAD3E0ED09CC64D8 /* Repository */,
+				A5556BAEE7762974182F36A0 /* Scan */,
+				F1E74CDFDC929292082171A4 /* Schedule */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		2C88A9E63838F73FA2A2BE41 /* Preview Content */ = {
+			isa = PBXGroup;
+			children = (
+				50EBC36DB26FE6B430BB0223 /* PreviewHelpers.swift */,
+			);
+			path = "Preview Content";
+			sourceTree = "<group>";
+		};
+		391FAD8F81FE3FA9EE4B17E9 /* CommandDisplay */ = {
+			isa = PBXGroup;
+			children = (
+				85980609944B62A90FEC53CE /* CommandDisplayView.swift */,
+			);
+			path = CommandDisplay;
+			sourceTree = "<group>";
+		};
+		3ED22DEB4BCF4DABDFD80D2E /* Mocks */ = {
+			isa = PBXGroup;
+			children = (
+				321F2458CF94799F47BE153F /* MockResticService.swift */,
+			);
+			path = Mocks;
+			sourceTree = "<group>";
+		};
+		468641F3E84C6838B1317135 = {
+			isa = PBXGroup;
+			children = (
+				5E50F861D10595371FF026D5 /* ResticMac */,
+				95A76D86FD74DC5CD4F27A7B /* ResticMacTests */,
+				59BF3C5DE1FBADFAE7B62C3B /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		59BF3C5DE1FBADFAE7B62C3B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				C05E9FF99DBCD233D86BD822 /* ResticMac.app */,
+				44D85B7FCF44091635CB031C /* ResticMacTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		5E50F861D10595371FF026D5 /* ResticMac */ = {
+			isa = PBXGroup;
+			children = (
+				8EFBF3D6BD3F0805A3B7F35B /* App */,
+				83172FF753C51270E7F952DD /* Models */,
+				2C88A9E63838F73FA2A2BE41 /* Preview Content */,
+				A1BD33DB4E8A59765EC1C65F /* Resources */,
+				E6B6EF2CF5EC65E439831335 /* Services */,
+				763BB677165AAAE37B8A2F0F /* Utilities */,
+				69F67C5B7AB959B88B20D9AC /* ViewModels */,
+				29ACEC02527CB268C13F611A /* Views */,
+				B7C6989A7411DEE159FB5A99 /* ResticMac.entitlements */,
+			);
+			name = ResticMac;
+			path = Sources/ResticMac;
+			sourceTree = "<group>";
+		};
+		69F67C5B7AB959B88B20D9AC /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				7FA29CA1C371F3E25401791D /* BackupViewModel.swift */,
+				A08050BCCB11F9FFCAFF6028 /* CommandDisplayViewModel.swift */,
+				06B6549770E56DE1116440CC /* RepositoryViewModel.swift */,
+				4C9BB3AE3C4ED202479ABEA2 /* SnapshotViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		7120A26EBFF86F1BFA16BB36 /* Storage */ = {
+			isa = PBXGroup;
+			children = (
+				87CF7ED3C163D746AB5B88E8 /* RepositoryStorage.swift */,
+			);
+			path = Storage;
+			sourceTree = "<group>";
+		};
+		763BB677165AAAE37B8A2F0F /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				DE0E9C309CCACC9C7FEF2394 /* AppLogger.swift */,
+				864136CB6162CA8E3AC292F7 /* Constants.swift */,
+				34BDE9C89C93D2CA57C0D4FA /* ProcessExecutor.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		788F106D7AE05412AE60D839 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				8F77551E4C89D15D477D708B /* RepositoryTests.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		81C84AEEFAD3E0ED09CC64D8 /* Repository */ = {
+			isa = PBXGroup;
+			children = (
+				3B6472E18B5BA95B6B992319 /* RepositoryDetailView.swift */,
+				C6D44D35731482E827774552 /* RepositoryForm.swift */,
+				B2775A8EFB483EA47C5411BA /* RepositoryView.swift */,
+			);
+			path = Repository;
+			sourceTree = "<group>";
+		};
+		83172FF753C51270E7F952DD /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				3EA711C44594320108D87BC4 /* Repository.swift */,
+				A88FF30F7DE22384F2E149BF /* RepositoryScanResult.swift */,
+				8480C34D0697D0654765777F /* RepositoryStatus.swift */,
+				8C2E2AA6AFFC37805F598CAE /* ResticTypes.swift */,
+				F746A73B59E87C7492102C0F /* Snapshot.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		8EFBF3D6BD3F0805A3B7F35B /* App */ = {
+			isa = PBXGroup;
+			children = (
+				3731511AE963BAA21EF39A87 /* AppDelegate.swift */,
+				14619C798B901B563E0EF3B1 /* ResticMacApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		9276103006E4E6A999356CAA /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				6C84B83B19DE8E300D901D51 /* BackupViewModelTests.swift */,
+				E2850F6AB4899608D3BA0B43 /* CommandDisplayViewModelTests.swift */,
+				83324B649D694FF0E8440308 /* RepositoryViewModelTests.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		95A76D86FD74DC5CD4F27A7B /* ResticMacTests */ = {
+			isa = PBXGroup;
+			children = (
+				3ED22DEB4BCF4DABDFD80D2E /* Mocks */,
+				788F106D7AE05412AE60D839 /* Models */,
+				D4AF7B68CB002DDE27E1D445 /* Services */,
+				9276103006E4E6A999356CAA /* ViewModels */,
+				5193720DA6130F98BAF3B32A /* ResticMacTests.swift */,
+			);
+			name = ResticMacTests;
+			path = Tests/ResticMacTests;
+			sourceTree = "<group>";
+		};
+		A1BD33DB4E8A59765EC1C65F /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		A5556BAEE7762974182F36A0 /* Scan */ = {
+			isa = PBXGroup;
+			children = (
+				86D865A74EFBC0BB3BEE5FB7 /* ScanView.swift */,
+				43CA20421A8ABB14B1EF62D6 /* ScanViewModel.swift */,
+			);
+			path = Scan;
+			sourceTree = "<group>";
+		};
+		B327D8FFC2B932EEFB8E3E72 /* ResticService */ = {
+			isa = PBXGroup;
+			children = (
+				2670F7578A7622C0FD6E59D8 /* CommandOutputHandler.swift */,
+				FDED423E47D30F5468E42313 /* ResticService.swift */,
+			);
+			path = ResticService;
+			sourceTree = "<group>";
+		};
+		C95A74DD6AAEE172278ECC74 /* SchedulerService */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = SchedulerService;
+			sourceTree = "<group>";
+		};
+		D0499AA408510E5CD1232DA3 /* Backup */ = {
+			isa = PBXGroup;
+			children = (
+				DB7D0F4317B24B03FA240C99 /* BackupView.swift */,
+				40EAA5DD1B1CFD2AD1B9F7FF /* PathSelector.swift */,
+			);
+			path = Backup;
+			sourceTree = "<group>";
+		};
+		D49B1C20DA01C735EA1E2227 /* Main */ = {
+			isa = PBXGroup;
+			children = (
+				DC3EC14850C27CC2C87D25DA /* ContentView.swift */,
+				7666C86EFF52C2CA7F68DB96 /* MainView.swift */,
+			);
+			path = Main;
+			sourceTree = "<group>";
+		};
+		D4AF7B68CB002DDE27E1D445 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				DC566DBAB6B125FF911E3226 /* RepositoryStorageTests.swift */,
+				FC680A3497DE37128D202541 /* ResticServiceTests.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		D6969F3947177891AF690FBC /* CommandDisplayManager */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = CommandDisplayManager;
+			sourceTree = "<group>";
+		};
+		E6B6EF2CF5EC65E439831335 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				FA4189505E71FCDDD0A5AB80 /* AsyncCommandExecutor */,
+				D6969F3947177891AF690FBC /* CommandDisplayManager */,
+				B327D8FFC2B932EEFB8E3E72 /* ResticService */,
+				C95A74DD6AAEE172278ECC74 /* SchedulerService */,
+				7120A26EBFF86F1BFA16BB36 /* Storage */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		F1E74CDFDC929292082171A4 /* Schedule */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Schedule;
+			sourceTree = "<group>";
+		};
+		FA4189505E71FCDDD0A5AB80 /* AsyncCommandExecutor */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = AsyncCommandExecutor;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		77AE158B5CC9B4FBB6296CBE /* ResticMacTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 445889D477A9613816D4C44F /* Build configuration list for PBXNativeTarget "ResticMacTests" */;
+			buildPhases = (
+				207C58019313CA49C4B338FB /* Sources */,
+				98B1FCF92135CF2F5F849F4A /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				460B62EAE12808A0855AA4C1 /* PBXTargetDependency */,
+			);
+			name = ResticMacTests;
+			packageProductDependencies = (
+				F9100C60E3938C5FAEC3DFA2 /* SwiftShell */,
+				E26C77F37B7D65D34400E48C /* Logging */,
+				CC45558CA99456550B1BD7C7 /* KeychainAccess */,
+			);
+			productName = ResticMacTests;
+			productReference = 44D85B7FCF44091635CB031C /* ResticMacTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		CB2E215CAB5BD22CC6881BB5 /* ResticMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0FD3B722F6BBEFCB0D196CB8 /* Build configuration list for PBXNativeTarget "ResticMac" */;
+			buildPhases = (
+				DB5812834BF015CF79062F3D /* Sources */,
+				99351B64F70A8896722E2525 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ResticMac;
+			packageProductDependencies = (
+				AF3F30A2A30862558AE69A73 /* SwiftShell */,
+				21D965D6DC6EF0B635D66F2D /* Logging */,
+				AB1DAACB60D28ABE3A68A6F5 /* KeychainAccess */,
+			);
+			productName = ResticMac;
+			productReference = C05E9FF99DBCD233D86BD822 /* ResticMac.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		7AE5DFCED30BEEFE34EE2B9C /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 66F65121E7CECCD743F66E51 /* Build configuration list for PBXProject "ResticMac" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en_GB;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en_GB,
+			);
+			mainGroup = 468641F3E84C6838B1317135;
+			packageReferences = (
+				F87A0B4490BD65BBB81C372E /* XCRemoteSwiftPackageReference "KeychainAccess" */,
+				A407AFD38368B30D1546E12E /* XCRemoteSwiftPackageReference "SwiftShell" */,
+				823C19AF7BD84730CC72FD5D /* XCRemoteSwiftPackageReference "swift-log" */,
+			);
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				CB2E215CAB5BD22CC6881BB5 /* ResticMac */,
+				77AE158B5CC9B4FBB6296CBE /* ResticMacTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		207C58019313CA49C4B338FB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F90FB8A4A628FF7B83EAFE26 /* BackupViewModelTests.swift in Sources */,
+				8765778D2D5FEEFAB0148DB6 /* CommandDisplayViewModelTests.swift in Sources */,
+				9531407BDBA2929DCA2DDB25 /* MockResticService.swift in Sources */,
+				E5C7C22517CAA8CDC390B4FD /* RepositoryStorageTests.swift in Sources */,
+				B250B56B4BAD486D2732281A /* RepositoryTests.swift in Sources */,
+				01BE4BE0D37D27596E9D8F3A /* RepositoryViewModelTests.swift in Sources */,
+				43E403995F9D9825267EB30B /* ResticMacTests.swift in Sources */,
+				237A1CA04BA052B62AEF48B3 /* ResticServiceTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DB5812834BF015CF79062F3D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				13DB0E884A53D216FEC1C946 /* AppDelegate.swift in Sources */,
+				9E4305F3506450694C569ED6 /* AppLogger.swift in Sources */,
+				41B7907E65F0F32D6827FD37 /* BackupView.swift in Sources */,
+				CE7588C4C04E6709BC125A9C /* BackupViewModel.swift in Sources */,
+				F041CD16EEA5E307DBB0F5BF /* CommandDisplayView.swift in Sources */,
+				89B38EF1AAB89399523D9A62 /* CommandDisplayViewModel.swift in Sources */,
+				6916B984D07FC4330868BD0C /* CommandOutputHandler.swift in Sources */,
+				B287DB69122AF82B2D1CF12E /* Constants.swift in Sources */,
+				000A0361634755A4AEAAFA9C /* ContentView.swift in Sources */,
+				4D16161171536492098F37AA /* MainView.swift in Sources */,
+				CA196BA9A18756DF1BC8E85C /* PathSelector.swift in Sources */,
+				A5359C456D7303928E393AF7 /* PreviewHelpers.swift in Sources */,
+				D7048E3811B77084B289C9C0 /* ProcessExecutor.swift in Sources */,
+				0F87810D420CB1E97D3EB685 /* Repository.swift in Sources */,
+				2C3AA570A2D7ADCDDB595747 /* RepositoryDetailView.swift in Sources */,
+				B43B6AB3F492A0B534230302 /* RepositoryForm.swift in Sources */,
+				D4951DA8B5397290C25B2B29 /* RepositoryScanResult.swift in Sources */,
+				9EA99926CA36AEA07833F3A0 /* RepositoryStatus.swift in Sources */,
+				0AFDB5E7E15397C295D0866D /* RepositoryStorage.swift in Sources */,
+				1E2DDC876100566364476A55 /* RepositoryView.swift in Sources */,
+				3DA58BE2873228CBC35EA817 /* RepositoryViewModel.swift in Sources */,
+				323CECB965A9A2BF2BFAF5BE /* ResticMacApp.swift in Sources */,
+				E9B6AD8B73DB00218F16E9CE /* ResticService.swift in Sources */,
+				5576567A49D44B6BE11933DC /* ResticTypes.swift in Sources */,
+				A7F99BC19035949B2B4B6EF3 /* ScanView.swift in Sources */,
+				19E441D76A72F8EF44BE3A32 /* ScanViewModel.swift in Sources */,
+				B05ACED9BB6C1ED27186DE0C /* Snapshot.swift in Sources */,
+				AF19BCFE862B6A08B05F92C9 /* SnapshotViewModel.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		460B62EAE12808A0855AA4C1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CB2E215CAB5BD22CC6881BB5 /* ResticMac */;
+			targetProxy = 3DA58E586A77D0D596DB4F8D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		189F8CF012A8CEC91F9D58F9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES;
+				CLANG_ANALYZER_SECURITY_INSECUREAPI_STRCPY = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				RUN_CLANG_STATIC_ANALYZER = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		2844947ECAF8C3547A0055F5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.resticmac.ResticMacTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ResticMac.app/Contents/MacOS/ResticMac";
+			};
+			name = Release;
+		};
+		305F90448EA65BB9697DBA40 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Sources/ResticMac/ResticMac.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.resticmac.app;
+				PRODUCT_NAME = ResticMac;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		3C7EED8DEADCA4A8E5ECABB7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.resticmac.ResticMacTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ResticMac.app/Contents/MacOS/ResticMac";
+			};
+			name = Debug;
+		};
+		C654E5A3A0B015391157A26A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES;
+				CLANG_ANALYZER_SECURITY_INSECUREAPI_STRCPY = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				RUN_CLANG_STATIC_ANALYZER = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		E2DEB8E77DE1E2C16310B017 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Sources/ResticMac/ResticMac.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.resticmac.app;
+				PRODUCT_NAME = ResticMac;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0FD3B722F6BBEFCB0D196CB8 /* Build configuration list for PBXNativeTarget "ResticMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				305F90448EA65BB9697DBA40 /* Debug */,
+				E2DEB8E77DE1E2C16310B017 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		445889D477A9613816D4C44F /* Build configuration list for PBXNativeTarget "ResticMacTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3C7EED8DEADCA4A8E5ECABB7 /* Debug */,
+				2844947ECAF8C3547A0055F5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		66F65121E7CECCD743F66E51 /* Build configuration list for PBXProject "ResticMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C654E5A3A0B015391157A26A /* Debug */,
+				189F8CF012A8CEC91F9D58F9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		823C19AF7BD84730CC72FD5D /* XCRemoteSwiftPackageReference "swift-log" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-log.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.5.3;
+			};
+		};
+		A407AFD38368B30D1546E12E /* XCRemoteSwiftPackageReference "SwiftShell" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/kareman/SwiftShell.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.1.0;
+			};
+		};
+		F87A0B4490BD65BBB81C372E /* XCRemoteSwiftPackageReference "KeychainAccess" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/kishikawakatsumi/KeychainAccess.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 4.2.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		21D965D6DC6EF0B635D66F2D /* Logging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 823C19AF7BD84730CC72FD5D /* XCRemoteSwiftPackageReference "swift-log" */;
+			productName = Logging;
+		};
+		AB1DAACB60D28ABE3A68A6F5 /* KeychainAccess */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F87A0B4490BD65BBB81C372E /* XCRemoteSwiftPackageReference "KeychainAccess" */;
+			productName = KeychainAccess;
+		};
+		AF3F30A2A30862558AE69A73 /* SwiftShell */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A407AFD38368B30D1546E12E /* XCRemoteSwiftPackageReference "SwiftShell" */;
+			productName = SwiftShell;
+		};
+		CC45558CA99456550B1BD7C7 /* KeychainAccess */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F87A0B4490BD65BBB81C372E /* XCRemoteSwiftPackageReference "KeychainAccess" */;
+			productName = KeychainAccess;
+		};
+		E26C77F37B7D65D34400E48C /* Logging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 823C19AF7BD84730CC72FD5D /* XCRemoteSwiftPackageReference "swift-log" */;
+			productName = Logging;
+		};
+		F9100C60E3938C5FAEC3DFA2 /* SwiftShell */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A407AFD38368B30D1546E12E /* XCRemoteSwiftPackageReference "SwiftShell" */;
+			productName = SwiftShell;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 7AE5DFCED30BEEFE34EE2B9C /* Project object */;
+}
