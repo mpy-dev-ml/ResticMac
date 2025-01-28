@@ -45,4 +45,16 @@ struct PreviewResticService: ResticServiceProtocol {
     func deleteRepository(at path: URL) async throws {
         // Preview implementation - no actual deletion
     }
+    
+    func snapshotProgress() -> AsyncStream<SnapshotProgress> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+    
+    func restoreProgress() -> AsyncStream<RestoreProgress> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
 }

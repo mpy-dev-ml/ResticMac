@@ -31,7 +31,7 @@ enum ProcessError: LocalizedError, Sendable {
         case .timeout(let duration):
             return "Process timed out after \(Int(duration)) seconds"
         case .notInitialized:
-            return "ProcessExecutor not initialized. Call setup() first"
+            return "ProcessExecutor not initialized. Call initialize() first"
         }
     }
 }
@@ -46,7 +46,11 @@ final class ProcessExecutor: @unchecked Sendable {
     private let defaultTimeout: TimeInterval = 300 // 5 minutes default timeout
     private var isInitialized: Bool = false
     
-    init() async throws {
+    nonisolated init() {
+        // Synchronous initialization
+    }
+    
+    func initialize() async throws {
         try await setup()
     }
     
@@ -82,7 +86,7 @@ final class ProcessExecutor: @unchecked Sendable {
                 process.arguments = arguments
                 
                 if let env = environment {
-                    process.environment = env
+                    process.environment = env as [String: String]
                 }
                 
                 if let workDir = workingDirectory {
@@ -110,23 +114,25 @@ final class ProcessExecutor: @unchecked Sendable {
                 // Start process with timeout
                 try process.run()
                 
-                if let timeout = timeout ?? self.defaultTimeout {
-                    try await withThrowingTaskGroup(of: Void.self) { group in
-                        group.addTask {
-                            try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                            process.terminate()
-                            throw ProcessError.timeout(duration: timeout)
-                        }
-                        
-                        group.addTask {
-                            process.waitUntilExit()
-                            try group.cancelAll()
-                        }
-                        
-                        try await group.next()
+                let effectiveTimeout = timeout ?? self.defaultTimeout
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    // Add timeout monitoring task
+                    group.addTask(priority: .userInitiated) {
+                        try await Task.sleep(nanoseconds: UInt64(effectiveTimeout * 1_000_000_000))
+                        process.terminate()
+                        throw ProcessError.timeout(duration: effectiveTimeout)
                     }
-                } else {
-                    process.waitUntilExit()
+                    
+                    // Add process monitoring task
+                    group.addTask(priority: .userInitiated) {
+                        process.waitUntilExit()
+                    }
+                    
+                    // Wait for first task to complete (either timeout or process exit)
+                    try await group.next()
+                    
+                    // Cancel remaining tasks
+                    group.cancelAll()
                 }
                 
                 let output = String(data: outputData, encoding: .utf8) ?? ""

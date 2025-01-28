@@ -21,39 +21,66 @@ protocol ResticServiceProtocol: Sendable {
     func deleteRepository(at path: URL) async throws
     
     // New methods for progress monitoring
-    func snapshotProgress() -> AsyncStream<SnapshotProgress>
-    func restoreProgress() -> AsyncStream<RestoreProgress>
+    func snapshotProgress() -> AsyncStream<SnapshotProgress, Never>
+    func restoreProgress() -> AsyncStream<RestoreProgress, Never>
 }
 
 @ResticServiceActor
 final class ResticService: ResticServiceProtocol, @unchecked Sendable {
-    private static let instance = ResticService()
+    private static var _instance: ResticService?
     
     static var shared: ResticService {
-        instance
+        guard let instance = _instance else {
+            fatalError("ResticService not initialized. Call setup() first.")
+        }
+        return instance
     }
     
     private let executor: ProcessExecutor
     private var displayViewModel: CommandDisplayViewModel?
-    private let progressContinuation: AsyncStream<SnapshotProgress>.Continuation
-    private let restoreContinuation: AsyncStream<RestoreProgress>.Continuation
     
-    private init() async throws {
-        // Initialize ProcessExecutor with new async throwing initializer
-        self.executor = try await ProcessExecutor()
+    // Progress tracking
+    private let progressStream: AsyncStream<SnapshotProgress, Never>
+    private let progressContinuation: AsyncStream<SnapshotProgress, Never>.Continuation
+    
+    // Restore tracking
+    private let restoreStream: AsyncStream<RestoreProgress, Never>
+    private let restoreContinuation: AsyncStream<RestoreProgress, Never>.Continuation
+    
+    private init() {
+        // Initialize with default values
+        self.executor = ProcessExecutor() // This is now nonisolated
         
-        // Set up progress monitoring streams
-        var progressContinuation: AsyncStream<SnapshotProgress>.Continuation!
-        let progressStream = AsyncStream<SnapshotProgress> { continuation in
-            progressContinuation = continuation
+        // Set up progress monitoring
+        var progressCont: AsyncStream<SnapshotProgress, Never>.Continuation!
+        let pStream = AsyncStream<SnapshotProgress, Never>(bufferingPolicy: .unbounded) { continuation in
+            progressCont = continuation
         }
-        self.progressContinuation = progressContinuation
+        self.progressStream = pStream
+        self.progressContinuation = progressCont
         
-        var restoreContinuation: AsyncStream<RestoreProgress>.Continuation!
-        let restoreStream = AsyncStream<RestoreProgress> { continuation in
-            restoreContinuation = continuation
+        // Set up restore monitoring
+        var restoreCont: AsyncStream<RestoreProgress, Never>.Continuation!
+        let rStream = AsyncStream<RestoreProgress, Never>(bufferingPolicy: .unbounded) { continuation in
+            restoreCont = continuation
         }
-        self.restoreContinuation = restoreContinuation
+        self.restoreStream = rStream
+        self.restoreContinuation = restoreCont
+    }
+    
+    private func emitProgress(_ progress: SnapshotProgress) {
+        progressContinuation.yield(progress)
+    }
+    
+    private func emitRestore(_ progress: RestoreProgress) {
+        restoreContinuation.yield(progress)
+    }
+    
+    static func setup() async throws {
+        guard _instance == nil else { return }
+        let service = ResticService()
+        try await service.executor.initialize() // Properly handle async initialization
+        _instance = service
     }
     
     func setCommandDisplay(_ display: CommandDisplayViewModel) async {
@@ -62,12 +89,16 @@ final class ResticService: ResticServiceProtocol, @unchecked Sendable {
     
     func verifyInstallation() async throws {
         do {
-            _ = try await executor.execute(
+            let result = try await executor.execute(
                 "/usr/local/bin/restic",
                 arguments: ["version"],
                 environment: [:],
                 timeout: 10
             )
+            
+            guard result.isSuccess else {
+                throw ResticError.notInstalled
+            }
         } catch {
             await AppLogger.shared.error("Failed to verify Restic installation: \(error.localizedDescription)")
             throw ResticError.notInstalled
@@ -177,13 +208,20 @@ final class ResticService: ResticServiceProtocol, @unchecked Sendable {
         )
         
         let result = try await withTaskCancellationHandler {
-            try await executor.execute(
+            // Update progress during backup
+            let result = try await executor.execute(
                 command.executable,
                 arguments: command.arguments,
-                environment: command.environment
-            )
-        } onCancel: {
+                environment: command.environment as [String: String]
+            ) { output in
+                if let progress = SnapshotProgress(output: output) {
+                    emitProgress(progress)
+                }
+            }
+            return result
+        } onCancel: { [self] in
             // Handle cancellation cleanup
+            emitProgress(SnapshotProgress(totalFiles: 0, processedFiles: 0, totalBytes: 0, processedBytes: 0, currentFile: nil))
             progressContinuation.finish()
         }
         
@@ -219,7 +257,21 @@ final class ResticService: ResticServiceProtocol, @unchecked Sendable {
             password: try repository.retrievePassword(),
             operation: .restore(snapshot: snapshot, target: targetPath)
         )
-        _ = try await executeCommand(command)
+        
+        try await withTaskCancellationHandler {
+            try await executor.execute(
+                command.executable,
+                arguments: command.arguments,
+                environment: command.environment as [String: String]
+            ) { output in
+                if let progress = RestoreProgress(output: output) {
+                    emitRestore(progress)
+                }
+            }
+        } onCancel: { [self] in
+            emitRestore(RestoreProgress(totalFiles: 0, processedFiles: 0, totalBytes: 0, processedBytes: 0, currentFile: nil))
+            restoreContinuation.finish()
+        }
     }
     
     func listSnapshotContents(repository: Repository, snapshot: String, path: String?) async throws -> [SnapshotEntry] {
@@ -254,20 +306,12 @@ final class ResticService: ResticServiceProtocol, @unchecked Sendable {
         }
     }
     
-    func snapshotProgress() -> AsyncStream<SnapshotProgress> {
-        AsyncStream { continuation in
-            Task {
-                // Implementation details
-            }
-        }
+    nonisolated func snapshotProgress() -> AsyncStream<SnapshotProgress, Never> {
+        progressStream
     }
     
-    nonisolated func restoreProgress() -> AsyncStream<RestoreProgress> {
-        AsyncStream { continuation in
-            Task {
-                // Implementation details
-            }
-        }
+    nonisolated func restoreProgress() -> AsyncStream<RestoreProgress, Never> {
+        restoreStream
     }
     
     private func executeCommand(_ command: ResticCommand) async throws -> String {
@@ -275,14 +319,14 @@ final class ResticService: ResticServiceProtocol, @unchecked Sendable {
         let result = try await executor.execute(
             command.executable,
             arguments: command.arguments,
-            environment: command.environment
+            environment: command.environment as [String: String]
         )
         
         if !result.isSuccess {
             throw ResticError.commandFailed(underlying: NSError(
                 domain: "ResticError",
                 code: Int(result.exitCode),
-                userInfo: [NSLocalizedDescriptionKey: result.error]
+                userInfo: [NSLocalizedDescriptionKey: result.error] as [String: Any]
             ))
         }
         
@@ -322,6 +366,15 @@ struct SnapshotProgress: Sendable {
     let totalBytes: Int64
     let processedBytes: Int64
     let currentFile: String?
+    
+    init(output: String) {
+        // Parse progress from output
+        self.totalFiles = 0
+        self.processedFiles = 0
+        self.totalBytes = 0
+        self.processedBytes = 0
+        self.currentFile = nil
+    }
 }
 
 struct RestoreProgress: Sendable {
@@ -330,4 +383,13 @@ struct RestoreProgress: Sendable {
     let totalBytes: Int64
     let processedBytes: Int64
     let currentFile: String?
+    
+    init(output: String) {
+        // Parse progress from output
+        self.totalFiles = 0
+        self.processedFiles = 0
+        self.totalBytes = 0
+        self.processedBytes = 0
+        self.currentFile = nil
+    }
 }

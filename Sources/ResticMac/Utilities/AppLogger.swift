@@ -31,7 +31,7 @@ final class AppLogger: @unchecked Sendable {
                 "file": "\(file)",
                 "function": "\(function)",
                 "line": "\(line)"
-            ]
+            ] as [String: Logger.MetadataValue]
             
             if let metadata = metadata {
                 do {
@@ -41,7 +41,7 @@ final class AppLogger: @unchecked Sendable {
                         dict.forEach { logMetadata[$0.key] = .string("\($0.value)") }
                     }
                 } catch {
-                    logMetadata["metadata_error"] = "Failed to encode metadata: \(error)"
+                    logMetadata["metadata_error"] = .string("Failed to encode metadata: \(error)")
                 }
             }
             
@@ -64,7 +64,7 @@ final class AppLogger: @unchecked Sendable {
                 "file": "\(file)",
                 "function": "\(function)",
                 "line": "\(line)"
-            ]
+            ] as [String: Logger.MetadataValue]
             
             if let metadata = metadata {
                 do {
@@ -74,7 +74,7 @@ final class AppLogger: @unchecked Sendable {
                         dict.forEach { logMetadata[$0.key] = .string("\($0.value)") }
                     }
                 } catch {
-                    logMetadata["metadata_error"] = "Failed to encode metadata: \(error)"
+                    logMetadata["metadata_error"] = .string("Failed to encode metadata: \(error)")
                 }
             }
             
@@ -97,7 +97,7 @@ final class AppLogger: @unchecked Sendable {
                 "file": "\(file)",
                 "function": "\(function)",
                 "line": "\(line)"
-            ]
+            ] as [String: Logger.MetadataValue]
             
             if let metadata = metadata {
                 do {
@@ -107,7 +107,7 @@ final class AppLogger: @unchecked Sendable {
                         dict.forEach { logMetadata[$0.key] = .string("\($0.value)") }
                     }
                 } catch {
-                    logMetadata["metadata_error"] = "Failed to encode metadata: \(error)"
+                    logMetadata["metadata_error"] = .string("Failed to encode metadata: \(error)")
                 }
             }
             
@@ -130,7 +130,7 @@ final class AppLogger: @unchecked Sendable {
                 "file": "\(file)",
                 "function": "\(function)",
                 "line": "\(line)"
-            ]
+            ] as [String: Logger.MetadataValue]
             
             if let metadata = metadata {
                 do {
@@ -140,7 +140,7 @@ final class AppLogger: @unchecked Sendable {
                         dict.forEach { logMetadata[$0.key] = .string("\($0.value)") }
                     }
                 } catch {
-                    logMetadata["metadata_error"] = "Failed to encode metadata: \(error)"
+                    logMetadata["metadata_error"] = .string("Failed to encode metadata: \(error)")
                 }
             }
             

@@ -4,7 +4,7 @@ import os
 // MARK: - Output Format Protocol
 
 /// Protocol for different output format handlers
-protocol OutputFormat {
+protocol OutputFormat: Sendable {
     func parseOutput(_ line: String) -> CommandOutput
 }
 
@@ -23,28 +23,35 @@ struct JSONOutputFormat: OutputFormat {
     
     func parseOutput(_ line: String) -> CommandOutput {
         guard let data = line.data(using: .utf8) else {
-            return CommandOutput(type: .unknown, message: line)
+            return CommandOutput(type: .error, message: "Invalid UTF-8 string: \(line)")
         }
         
-        do {
-            // Try to parse as JSON
-            if let _ = try? JSONSerialization.jsonObject(with: data, options: []) {
-                return CommandOutput(type: .unknown, message: line)
-            }
+        // Try to parse as JSON
+        if let _ = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
+            return CommandOutput(type: .json, message: line)
         }
         
         // Check for specific error patterns
         if line.contains("error:") || line.contains("Fatal:") {
-            return CommandOutput(type: .unknown, message: line)
+            return CommandOutput(type: .error, message: line)
         }
         
         // Progress indicators
-        if line.contains("[") && line.contains("]") && line.contains("%") {
-            return CommandOutput(type: .unknown, message: line)
+        if let progress = parseProgress(from: line) {
+            return CommandOutput(type: .progress(progress), message: line)
         }
         
         // Default to text output
-        return CommandOutput(type: .unknown, message: line)
+        return CommandOutput(type: .text, message: line)
+    }
+    
+    private func parseProgress(from line: String) -> Double? {
+        // Match patterns like [12.34%] or [45.67 percent]
+        let pattern = #/\[(\d+\.?\d*)%?\]/#
+        if let match = line.firstMatch(of: pattern) {
+            return Double(match.1)
+        }
+        return nil
     }
 }
 
@@ -53,40 +60,52 @@ struct JSONOutputFormat: OutputFormat {
 /// Handles and processes output from Restic commands
 @MainActor
 final class CommandOutputHandler: ProcessOutputHandler {
-    nonisolated func handleComplete(_ exitCode: Int32) {
-        <#code#>
-    }
-    
     private weak var displayViewModel: CommandDisplayViewModel?
+    private let outputFormat: OutputFormat
     
-    init(displayViewModel: CommandDisplayViewModel?) {
+    init(displayViewModel: CommandDisplayViewModel?, outputFormat: OutputFormat = JSONOutputFormat()) {
         self.displayViewModel = displayViewModel
+        self.outputFormat = outputFormat
         Task {
             await displayViewModel?.start()
         }
     }
     
-    func handleOutput(_ line: String) {
-        displayViewModel?.appendOutput(line)
+    nonisolated func handleOutput(_ line: String) async {
+        let output = outputFormat.parseOutput(line)
+        
+        await Task { @MainActor in
+            displayViewModel?.appendOutput(line)
+            
+            if case .progress(let percentage) = output.type {
+                await displayViewModel?.updateProgress(percentage)
+            }
+        }.value
     }
     
-    func handleError(_ line: String) {
-        displayViewModel?.appendError(line)
+    nonisolated func handleError(_ line: String) async {
+        await Task { @MainActor in
+            displayViewModel?.appendError(line)
+        }.value
     }
     
-    func handleComplete(_ exitCode: Int32) async {
-        await displayViewModel?.finish()
-    }
-    
-    func updateProgress(_ percentage: Double) async {
-        await displayViewModel?.updateProgress(percentage)
+    nonisolated func handleComplete(_ exitCode: Int32) {
+        Task { @MainActor in
+            if exitCode == 0 {
+                displayViewModel?.updateStatus(.completed)
+            } else {
+                displayViewModel?.updateStatus(.failed(code: exitCode))
+            }
+            displayViewModel?.isProcessing = false
+            await displayViewModel?.finish()
+        }
     }
 }
 
 // MARK: - Supporting Types
 
-struct CommandOutput {
-    enum OutputType {
+struct CommandOutput: Sendable {
+    enum OutputType: Sendable {
         case progress(Double)
         case summary
         case unknown
@@ -101,7 +120,7 @@ struct CommandOutput {
 
 // MARK: - Progress Types
 
-enum CommandProgress {
+enum CommandProgress: Sendable {
     case indeterminate
     case percentage(Double)
     case complete
