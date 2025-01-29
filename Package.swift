@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "ResticMac",
     platforms: [
-        .macOS(.v14)  // Targeting macOS 14 (Sonoma) and above
+        .macOS(.v13)  // Targeting macOS 13 (Ventura) for wider compatibility
     ],
     products: [
         .executable(
@@ -32,7 +32,7 @@ let package = Package(
             ],
             path: "Sources/ResticMac",
             resources: [
-                .process("Resources")  // Will add resources later
+                .process("Resources")
             ]
         ),
         .testTarget(
@@ -43,10 +43,7 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 "KeychainAccess"
             ],
-            path: "Tests/ResticMacTests",
-            swiftSettings: [
-                .unsafeFlags(["-enable-testing"])
-            ]
+            path: "Tests/ResticMacTests"
         ),
     ]
 )

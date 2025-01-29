@@ -1,8 +1,8 @@
 import Foundation
 
 protocol ProcessOutputHandler: Sendable {
-    func handleOutput(_ line: String) async
-    func handleError(_ line: String) async
+    func handleOutput(_ line: String)
+    func handleError(_ line: String)
     func handleComplete(_ exitCode: Int32)
 }
 
@@ -16,7 +16,7 @@ struct ProcessResult: Sendable {
     }
 }
 
-enum ProcessError: LocalizedError, Sendable {
+enum ProcessError: LocalizedError {
     case executionFailed(exitCode: Int32, message: String)
     case processStartFailed(message: String)
     case timeout(duration: TimeInterval)
@@ -36,123 +36,109 @@ enum ProcessError: LocalizedError, Sendable {
     }
 }
 
-@globalActor
-actor ProcessExecutorActor {
-    static let shared = ProcessExecutorActor()
-}
-
-@ProcessExecutorActor
-final class ProcessExecutor: @unchecked Sendable {
+actor ProcessExecutor {
     private let defaultTimeout: TimeInterval = 300 // 5 minutes default timeout
     private var isInitialized: Bool = false
     
-    nonisolated init() {
-        // Synchronous initialization
-    }
+    init() {}
     
     func initialize() async throws {
-        try await setup()
-    }
-    
-    private func setup() async throws {
         guard !isInitialized else { return }
         // Perform any necessary async initialization here
         isInitialized = true
     }
     
-    func execute(
-        _ executable: String,
-        arguments: [String] = [],
-        environment: [String: String]? = nil,
-        workingDirectory: URL? = nil,
-        timeout: TimeInterval? = nil
-    ) async throws -> ProcessResult {
+    private func setup() {
+        // Any additional setup needed
+    }
+    
+    func execute(_ command: String, 
+                arguments: [String], 
+                environment: [String: String]? = nil,
+                timeout: TimeInterval? = nil,
+                handler: (any ProcessOutputHandler)? = nil) async throws -> ProcessResult {
         guard isInitialized else {
             throw ProcessError.notInitialized
         }
         
-        return try await withThrowingTaskGroup(of: ProcessResult.self) { group in
-            group.addTask {
-                let process = Process()
-                var outputData = Data()
-                var errorData = Data()
-                
-                let outputPipe = Pipe()
-                let errorPipe = Pipe()
-                
-                process.standardOutput = outputPipe
-                process.standardError = errorPipe
-                process.executableURL = URL(fileURLWithPath: executable)
-                process.arguments = arguments
-                
-                if let env = environment {
-                    process.environment = env as [String: String]
-                }
-                
-                if let workDir = workingDirectory {
-                    process.currentDirectoryURL = workDir
-                }
-                
-                // Set up async output handling
-                let outputHandle = outputPipe.fileHandleForReading
-                let errorHandle = errorPipe.fileHandleForReading
-                
-                Task {
-                    for try await line in outputHandle.bytes.lines {
-                        outputData.append(line.data(using: .utf8)!)
-                        outputData.append("\n".data(using: .utf8)!)
-                    }
-                }
-                
-                Task {
-                    for try await line in errorHandle.bytes.lines {
-                        errorData.append(line.data(using: .utf8)!)
-                        errorData.append("\n".data(using: .utf8)!)
-                    }
-                }
-                
-                // Start process with timeout
-                try process.run()
-                
-                let effectiveTimeout = timeout ?? self.defaultTimeout
-                try await withThrowingTaskGroup(of: Void.self) { group in
-                    // Add timeout monitoring task
-                    group.addTask(priority: .userInitiated) {
-                        try await Task.sleep(nanoseconds: UInt64(effectiveTimeout * 1_000_000_000))
-                        process.terminate()
-                        throw ProcessError.timeout(duration: effectiveTimeout)
-                    }
-                    
-                    // Add process monitoring task
-                    group.addTask(priority: .userInitiated) {
-                        process.waitUntilExit()
-                    }
-                    
-                    // Wait for first task to complete (either timeout or process exit)
-                    try await group.next()
-                    
-                    // Cancel remaining tasks
-                    group.cancelAll()
-                }
-                
-                let output = String(data: outputData, encoding: .utf8) ?? ""
-                let error = String(data: errorData, encoding: .utf8) ?? ""
-                
-                guard process.terminationStatus == 0 else {
-                    throw ProcessError.executionFailed(
-                        exitCode: process.terminationStatus,
-                        message: error.isEmpty ? output : error
-                    )
-                }
-                
-                return ProcessResult(
-                    output: output,
-                    error: error,
-                    exitCode: process.terminationStatus
-                )
+        let process = Process()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        
+        process.executableURL = URL(fileURLWithPath: command)
+        process.arguments = arguments
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+        
+        if let env = environment {
+            process.environment = env
+        }
+        
+        let handlerCopy = handler // Capture handler value
+        
+        actor OutputCollector {
+            private(set) var data = Data()
+            
+            func append(_ newData: Data) {
+                data.append(newData)
             }
             
-            return try await group.next() ?? ProcessResult(output: "", error: "", exitCode: -1)
+            func getData() -> Data {
+                data
+            }
+        }
+        
+        let outputCollector = OutputCollector()
+        let errorCollector = OutputCollector()
+        
+        // Set up output handling
+        outputPipe.fileHandleForReading.readabilityHandler = { [handlerCopy] handle in
+            let data = handle.availableData
+            if !data.isEmpty {
+                Task {
+                    await outputCollector.append(data)
+                    if let line = String(data: data, encoding: .utf8) {
+                        handlerCopy?.handleOutput(line)
+                    }
+                }
+            }
+        }
+        
+        errorPipe.fileHandleForReading.readabilityHandler = { [handlerCopy] handle in
+            let data = handle.availableData
+            if !data.isEmpty {
+                Task {
+                    await errorCollector.append(data)
+                    if let line = String(data: data, encoding: .utf8) {
+                        handlerCopy?.handleError(line)
+                    }
+                }
+            }
+        }
+        
+        do {
+            try process.run()
+            process.waitUntilExit()
+            
+            // Clean up file handles
+            outputPipe.fileHandleForReading.readabilityHandler = nil
+            errorPipe.fileHandleForReading.readabilityHandler = nil
+            
+            let outputData = await outputCollector.getData()
+            let errorData = await errorCollector.getData()
+            
+            let output = String(data: outputData, encoding: .utf8) ?? ""
+            let error = String(data: errorData, encoding: .utf8) ?? ""
+            
+            handlerCopy?.handleComplete(process.terminationStatus)
+            
+            return ProcessResult(
+                output: output,
+                error: error,
+                exitCode: process.terminationStatus
+            )
+        } catch {
+            throw ProcessError.processStartFailed(message: error.localizedDescription)
         }
     }
 }

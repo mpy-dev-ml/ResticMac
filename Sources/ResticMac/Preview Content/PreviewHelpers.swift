@@ -1,7 +1,7 @@
 import SwiftUI
 import Foundation
 
-struct PreviewResticService: ResticServiceProtocol {
+class PreviewResticService: ResticServiceProtocol {
     func setCommandDisplay(_ display: CommandDisplayViewModel) async {}
     func verifyInstallation() async throws {}
     

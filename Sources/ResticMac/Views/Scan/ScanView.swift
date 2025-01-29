@@ -4,7 +4,7 @@ struct ScanView: View {
     @StateObject private var viewModel: ScanViewModel
     @State private var showFilePicker = false
     
-    init(resticService: ResticServiceProtocol) {
+    init(resticService: any ResticServiceProtocol) {
         _viewModel = StateObject(wrappedValue: ScanViewModel(resticService: resticService))
     }
     
@@ -19,38 +19,27 @@ struct ScanView: View {
                 ProgressView("Scanning...")
             } else {
                 List {
-                    Section("Found Repositories") {
-                        ForEach(viewModel.scanResults) { result in
-                            VStack(alignment: .leading) {
-                                HStack {
-                                    Image(systemName: result.isValid ? "checkmark.circle" : "xmark.circle")
-                                        .foregroundColor(result.isValid ? .green : .red)
-                                    Text(result.path.path)
-                                }
-                                if result.isValid, let snapshots = result.snapshots {
-                                    Text("\(snapshots.count) snapshots")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
+                    ForEach(viewModel.repositories) { result in
+                        VStack(alignment: .leading) {
+                            Text(result.name)
+                                .font(.headline)
+                            Text(result.path.path)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
                         }
                     }
                 }
             }
         }
-        .padding()
         .fileImporter(
             isPresented: $showFilePicker,
-            allowedContentTypes: [.folder]
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
         ) { result in
-            switch result {
-            case .success(let url):
-                Task {
-                    await viewModel.scanDirectory(url)
-                }
-            case .failure(let error):
-                print("Error selecting directory: \(error.localizedDescription)")
+            Task {
+                await viewModel.handleSelectedDirectory(result)
             }
         }
+        .padding()
     }
 }

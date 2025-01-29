@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 
 final class BackupViewModel: ObservableObject {
     @Published var selectedPaths: [URL] = []
@@ -8,48 +9,83 @@ final class BackupViewModel: ObservableObject {
     @Published var showError = false
     @Published var errorMessage = ""
     @Published var isLoading = false
+    @Published var progress: SnapshotProgress?
     
-    private let resticService: ResticServiceProtocol
+    private let resticService: ResticService
+    private var cancellables = Set<AnyCancellable>()
     
-    init(resticService: ResticServiceProtocol) {
+    init(resticService: ResticService = .shared) {
         self.resticService = resticService
+        
+        // Subscribe to backup progress updates
+        resticService.snapshotProgressPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] progress in
+                self?.progress = progress
+            }
+            .store(in: &cancellables)
     }
     
-    func loadRepositories() async {
+    func loadRepositories() {
         isLoading = true
-        defer { isLoading = false }
         
-        do {
-            // Scan for repositories in the default directory
-            let defaultDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            let results = try await resticService.scanForRepositories(in: defaultDirectory)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
             
-            // Convert scan results to repositories
-            repositories = results.compactMap { result in
-                guard result.isValid else { return nil }
-                return Repository(name: result.path.lastPathComponent, path: result.path)
+            do {
+                // Scan for repositories in the default directory
+                let defaultDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                let results = try self.resticService.scanForRepositories(in: defaultDirectory)
+                
+                DispatchQueue.main.async {
+                    // Convert scan results to repositories
+                    self.repositories = results.compactMap { result in
+                        guard result.isValid else { return nil }
+                        return Repository(name: result.path.lastPathComponent, path: result.path)
+                    }
+                    self.isLoading = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = error.localizedDescription
+                    self.showError = true
+                    self.isLoading = false
+                }
             }
-        } catch {
-            errorMessage = error.localizedDescription
-            showError = true
         }
     }
     
-    func createBackup() async throws {
+    func createBackup() {
         guard let repository = selectedRepository else {
-            throw BackupError.noRepositorySelected
+            self.errorMessage = "No repository selected"
+            self.showError = true
+            return
         }
         
         guard !selectedPaths.isEmpty else {
-            throw BackupError.noPathsSelected
+            self.errorMessage = "No paths selected"
+            self.showError = true
+            return
         }
         
-        do {
-            _ = try await resticService.createSnapshot(repository: repository, paths: selectedPaths)
-            // TODO: Handle successful snapshot creation
-        } catch {
-            errorMessage = error.localizedDescription
-            showError = true
+        isLoading = true
+        
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            
+            do {
+                _ = try self.resticService.createSnapshot(repository: repository, paths: selectedPaths)
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    // TODO: Handle successful snapshot creation
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = error.localizedDescription
+                    self.showError = true
+                    self.isLoading = false
+                }
+            }
         }
     }
     
@@ -65,15 +101,15 @@ final class BackupViewModel: ObservableObject {
 }
 
 enum BackupError: LocalizedError {
-    case noPathsSelected
     case noRepositorySelected
+    case noPathsSelected
     
     var errorDescription: String? {
         switch self {
-        case .noPathsSelected:
-            return "Please select at least one path to backup"
         case .noRepositorySelected:
-            return "Please select a repository for backup"
+            return "No repository selected"
+        case .noPathsSelected:
+            return "No paths selected for backup"
         }
     }
 }
