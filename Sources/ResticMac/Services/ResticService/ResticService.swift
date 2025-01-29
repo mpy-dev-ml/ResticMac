@@ -19,113 +19,183 @@ protocol ResticServiceProtocol {
     func restoreProgress() -> AsyncStream<RestoreProgress>
 }
 
+// MARK: - ResticError
+enum ResticError: LocalizedError, Sendable {
+    case installationNotFound
+    case invalidRepository(path: String)
+    case repositoryInitializationFailed(path: String, reason: String)
+    case repositoryAccessDenied(path: String)
+    case snapshotCreationFailed(reason: String)
+    case snapshotNotFound(id: String)
+    case restoreFailed(reason: String)
+    case invalidCommand(description: String)
+    case commandExecutionFailed(command: String, error: String)
+    case unexpectedOutput(description: String)
+    case deletionFailed(path: String, underlying: Error)
+    
+    var errorDescription: String? {
+        switch self {
+        case .installationNotFound:
+            "Restic installation not found. Please ensure Restic is installed and accessible."
+        case .invalidRepository(let path):
+            "Invalid repository at path: \(path)"
+        case .repositoryInitializationFailed(let path, let reason):
+            "Failed to initialize repository at \(path): \(reason)"
+        case .repositoryAccessDenied(let path):
+            "Access denied to repository at \(path)"
+        case .snapshotCreationFailed(let reason):
+            "Failed to create snapshot: \(reason)"
+        case .snapshotNotFound(let id):
+            "Snapshot not found with ID: \(id)"
+        case .restoreFailed(let reason):
+            "Failed to restore snapshot: \(reason)"
+        case .invalidCommand(let description):
+            "Invalid command: \(description)"
+        case .commandExecutionFailed(let command, let error):
+            "Command execution failed (\(command)): \(error)"
+        case .unexpectedOutput(let description):
+            "Unexpected output: \(description)"
+        case .deletionFailed(let path, _):
+            "Failed to delete repository at \(path)"
+        }
+    }
+    
+    var recoverySuggestion: String? {
+        switch self {
+        case .installationNotFound:
+            "Install Restic using Homebrew: brew install restic"
+        case .invalidRepository:
+            "Check if the repository path exists and is accessible"
+        case .repositoryAccessDenied:
+            "Check file permissions and ensure you have access to the repository"
+        case .snapshotCreationFailed:
+            "Verify backup paths are accessible and try again"
+        case .snapshotNotFound:
+            "List available snapshots using 'snapshots' command"
+        case .restoreFailed:
+            "Verify target path is writable and has sufficient space"
+        case .invalidCommand, .commandExecutionFailed, .unexpectedOutput, .repositoryInitializationFailed:
+            "Check logs for detailed error information"
+        case .deletionFailed:
+            "Check file permissions and ensure you have access to the repository"
+        }
+    }
+}
+
 @MainActor
 final class ResticService: ObservableObject, ResticServiceProtocol {
     @Published private(set) var isProcessing = false
     @Published private(set) var currentProgress: SnapshotProgress?
     
-    let snapshotProgressPublisher = PassthroughSubject<SnapshotProgress, Never>()
+    private let progressSubject = PassthroughSubject<SnapshotProgress, Never>()
+    private let restoreSubject = PassthroughSubject<RestoreProgress, Never>()
+    private var progressContinuation: AsyncStream<SnapshotProgress>.Continuation?
+    private var restoreContinuation: AsyncStream<RestoreProgress>.Continuation?
     
     private static var instance: ResticService?
+    private let executor: ProcessExecutor
+    private var displayViewModel: CommandDisplayViewModel?
+    private let logger = Logger(label: "com.resticmac.service")
     
     static var shared: ResticService {
         guard let instance = instance else {
-            fatalError("ResticService not initialized. Call setup() first.")
+            fatalError("ResticService not initialised. Call setup() first.")
         }
         return instance
     }
     
-    private let executor: ProcessExecutor
-    private var displayViewModel: CommandDisplayViewModel?
-    
-    // Progress tracking using combine publishers
-    private let progressSubject = PassthroughSubject<SnapshotProgress, Never>()
-    private let restoreSubject = PassthroughSubject<RestoreProgress, Never>()
+    static func setup() {
+        guard instance == nil else { return }
+        instance = ResticService()
+    }
     
     private init() {
         self.executor = ProcessExecutor()
+        setupProgressStreams()
     }
     
-    private func emitProgress(_ progress: SnapshotProgress) {
-        progressSubject.send(progress)
+    private func setupProgressStreams() {
+        var progressContinuation: AsyncStream<SnapshotProgress>.Continuation?
+        let progressStream = AsyncStream<SnapshotProgress> { continuation in
+            progressContinuation = continuation
+        }
+        self.progressContinuation = progressContinuation
+        
+        var restoreContinuation: AsyncStream<RestoreProgress>.Continuation?
+        let restoreStream = AsyncStream<RestoreProgress> { continuation in
+            restoreContinuation = continuation
+        }
+        self.restoreContinuation = restoreContinuation
     }
     
-    private func emitRestore(_ progress: RestoreProgress) {
-        restoreSubject.send(progress)
-    }
-    
-    static func setup() async throws {
-        guard instance == nil else { return }
-        let service = ResticService()
-        try await service.executor.initialize()
-        instance = service
-    }
-    
-    func setCommandDisplay(_ display: CommandDisplayViewModel) async {
-        await withCheckedContinuation { continuation in
-            executor.serialQueue.sync {
-                self.displayViewModel = display
-                continuation.resume()
-            }
+    func snapshotProgress() -> AsyncStream<SnapshotProgress> {
+        AsyncStream { continuation in
+            progressSubject
+                .receive(on: DispatchQueue.main)
+                .sink { progress in
+                    continuation.yield(progress)
+                }
+                .store(in: &Set<AnyCancellable>())
         }
     }
     
-    func verifyInstallation() async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            executor.serialQueue.sync {
-                do {
-                    let result = try executor.execute(
-                        "/usr/local/bin/restic",
-                        arguments: ["version"],
-                        environment: [:],
-                        timeout: 10
-                    )
-                    
-                    guard result.isSuccess else {
-                        throw ResticError.notInstalled
-                    }
-                    continuation.resume(returning: ())
-                } catch {
-                    AppLogger.shared.error("Failed to verify Restic installation: \(error.localizedDescription)")
-                    continuation.resume(throwing: ResticError.notInstalled)
+    func restoreProgress() -> AsyncStream<RestoreProgress> {
+        AsyncStream { continuation in
+            restoreSubject
+                .receive(on: DispatchQueue.main)
+                .sink { progress in
+                    continuation.yield(progress)
                 }
-            }
+                .store(in: &Set<AnyCancellable>())
+        }
+    }
+    
+    private func emitProgress(_ progress: SnapshotProgress) {
+        Task { @MainActor in
+            currentProgress = progress
+            progressSubject.send(progress)
+            progressContinuation?.yield(progress)
+        }
+    }
+    
+    private func emitRestoreProgress(_ progress: RestoreProgress) {
+        Task { @MainActor in
+            restoreSubject.send(progress)
+            restoreContinuation?.yield(progress)
+        }
+    }
+    
+    func setCommandDisplay(_ display: CommandDisplayViewModel) {
+        self.displayViewModel = display
+    }
+
+    func verifyInstallation() async throws {
+        do {
+            let versionCommand = ResticCommand(arguments: ["version"])
+            _ = try await executeCommand(versionCommand)
+        } catch {
+            AppLogger.shared.error("Restic installation verification failed: \(error.localizedDescription, privacy: .public)")
+            throw ResticError.installationNotFound
         }
     }
     
     func initializeRepository(name: String, path: URL) async throws -> Repository {
-        try await withCheckedThrowingContinuation { continuation in
-            executor.serialQueue.sync {
-                let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmedName.isEmpty else {
-                    continuation.resume(throwing: ResticError.validationFailed(errors: ["Repository name cannot be empty"]))
-                    return
-                }
-                
-                do {
-                    // Check if directory exists
-                    if !FileManager.default.fileExists(atPath: path.path) {
-                        try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
-                    }
-                    
-                    // Initialize repository with a temporary password
-                    let tempPassword = UUID().uuidString
-                    let command = ResticCommand(repository: path, password: tempPassword, operation: .initialize)
-                    _ = try executor.execute(
-                        command.executable,
-                        arguments: command.arguments,
-                        environment: command.environment as [String: String]
-                    )
-                    
-                    // Create repository and store password
-                    let repository = Repository(name: trimmedName, path: path)
-                    try repository.storePassword(tempPassword)
-                    
-                    continuation.resume(returning: repository)
-                } catch {
-                    continuation.resume(throwing: ResticError.initializationFailed(underlying: error))
-                }
-            }
+        do {
+            let initCommand = ResticCommand(
+                repository: path.path,
+                arguments: ["init"]
+            )
+            
+            try await executeCommand(initCommand)
+            
+            AppLogger.shared.info("Successfully initialized repository at \(path.path, privacy: .public)")
+            return Repository(name: name, path: path)
+        } catch {
+            let resticError = handleCommandError(error, command: "init")
+            throw ResticError.repositoryInitializationFailed(
+                path: path.path,
+                reason: resticError.localizedDescription
+            )
         }
     }
     
@@ -178,11 +248,7 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
                 operation: .snapshots
             )
             
-            let output = try executor.execute(
-                command.executable,
-                arguments: command.arguments,
-                environment: command.environment as [String: String]
-            )
+            let output = try await executeCommand(command)
             let snapshots = try parseSnapshotsOutput(output)
             
             return RepositoryScanResult(
@@ -204,11 +270,7 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
                     password: try repository.retrievePassword(),
                     operation: .check
                 )
-                _ = try executor.execute(
-                    command.executable,
-                    arguments: command.arguments,
-                    environment: command.environment as [String: String]
-                )
+                _ = try executeCommand(command)
                 continuation.resume(returning: RepositoryStatus(state: .ok, errors: []))
             }
         }
@@ -223,19 +285,15 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
                     operation: .backup(paths: paths)
                 )
                 
-                let result = try executor.execute(
-                    command.executable,
-                    arguments: command.arguments,
-                    environment: command.environment as [String: String]
-                ) { output in
+                let result = try await executeCommand(command) { output in
                     if let progress = SnapshotProgress(output: output) {
                         emitProgress(progress)
                     }
                 }
                 
                 // Parse snapshot ID from output
-                guard let snapshotId = parseSnapshotId(from: result.output) else {
-                    continuation.resume(throwing: ResticError.snapshotCreationFailed)
+                guard let snapshotId = parseSnapshotId(from: result) else {
+                    continuation.resume(throwing: ResticError.snapshotCreationFailed(reason: "Failed to parse snapshot ID"))
                     return
                 }
                 
@@ -260,11 +318,7 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
                     password: try repository.retrievePassword(),
                     operation: .snapshots
                 )
-                let output = try executor.execute(
-                    command.executable,
-                    arguments: command.arguments,
-                    environment: command.environment as [String: String]
-                )
+                let output = try await executeCommand(command)
                 continuation.resume(returning: try parseSnapshotsOutput(output))
             }
         }
@@ -279,13 +333,9 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
                     operation: .restore(snapshot: snapshot, target: targetPath)
                 )
                 
-                try executor.execute(
-                    command.executable,
-                    arguments: command.arguments,
-                    environment: command.environment as [String: String]
-                ) { output in
+                try await executeCommand(command) { output in
                     if let progress = RestoreProgress(output: output) {
-                        emitRestore(progress)
+                        emitRestoreProgress(progress)
                     }
                 }
                 continuation.resume()
@@ -301,11 +351,7 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
                     password: try repository.retrievePassword(),
                     operation: .ls(snapshot: snapshot, path: path)
                 )
-                let output = try executor.execute(
-                    command.executable,
-                    arguments: command.arguments,
-                    environment: command.environment as [String: String]
-                )
+                let output = try await executeCommand(command)
                 continuation.resume(returning: try JSONDecoder().decode([SnapshotEntry].self, from: output.data(using: .utf8) ?? Data()))
             }
         }
@@ -324,11 +370,7 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
                         operation: .unlock
                     )
                     
-                    _ = try executor.execute(
-                        command.executable,
-                        arguments: command.arguments,
-                        environment: command.environment as [String: String]
-                    )
+                    _ = try executeCommand(command)
                     
                     // Then remove the repository directory
                     try FileManager.default.removeItem(at: path)
@@ -336,38 +378,68 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
                     continuation.resume()
                 } catch {
                     AppLogger.shared.error("Failed to delete repository: \(error.localizedDescription)")
-                    continuation.resume(throwing: ResticError.deletionFailed(path: path, underlying: error))
+                    continuation.resume(throwing: ResticError.deletionFailed(path: path.path, underlying: error))
                 }
             }
         }
     }
     
-    nonisolated func snapshotProgress() -> AsyncStream<SnapshotProgress> {
-        AsyncStream { continuation in
-            Task { @MainActor in
-                let subscription = progressSubject.sink { progress in
-                    continuation.yield(progress)
-                }
-                continuation.onTermination = { _ in
-                    subscription.cancel()
-                }
-            }
+    private func executeCommand(_ command: ResticCommand) async throws -> String {
+        isProcessing = true
+        defer { isProcessing = false }
+        
+        displayViewModel?.appendCommand(command.description)
+        
+        do {
+            let output = try await executor.execute(command)
+            displayViewModel?.appendOutput(output)
+            return output
+        } catch {
+            let resticError = handleCommandError(error, command: command.description)
+            displayViewModel?.appendError(resticError.localizedDescription)
+            throw resticError
         }
     }
     
-    nonisolated func restoreProgress() -> AsyncStream<RestoreProgress> {
-        AsyncStream { continuation in
-            Task { @MainActor in
-                let subscription = restoreSubject.sink { progress in
-                    continuation.yield(progress)
-                }
-                continuation.onTermination = { _ in
-                    subscription.cancel()
-                }
+    private func executeCommand(_ command: ResticCommand, progressHandler: @escaping (String) -> Void) async throws -> String {
+        isProcessing = true
+        defer { isProcessing = false }
+        
+        displayViewModel?.appendCommand(command.description)
+        
+        do {
+            let output = try await executor.execute(command) { output in
+                progressHandler(output)
             }
+            displayViewModel?.appendOutput(output)
+            return output
+        } catch {
+            let resticError = handleCommandError(error, command: command.description)
+            displayViewModel?.appendError(resticError.localizedDescription)
+            throw resticError
         }
     }
     
+    private func handleCommandError(_ error: Error, command: String) -> ResticError {
+        AppLogger.shared.error("Command execution failed: \(error.localizedDescription, privacy: .public)")
+        
+        if let resticError = error as? ResticError {
+            return resticError
+        }
+        
+        return .commandExecutionFailed(command: command, error: error.localizedDescription)
+    }
+    
+    private func validateRepository(_ path: URL) throws {
+        guard FileManager.default.fileExists(atPath: path.path) else {
+            throw ResticError.invalidRepository(path: path.path)
+        }
+        
+        guard FileManager.default.isReadableFile(atPath: path.path) else {
+            throw ResticError.repositoryAccessDenied(path: path.path)
+        }
+    }
+
     private func parseSnapshotsOutput(_ output: String) throws -> [Snapshot] {
         // Implementation here
         []
