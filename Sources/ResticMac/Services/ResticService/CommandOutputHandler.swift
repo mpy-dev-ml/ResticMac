@@ -5,7 +5,7 @@ import os
 
 /// Protocol for different output format handlers
 protocol OutputFormat: Sendable {
-    func parseOutput(_ line: String) -> CommandOutput
+    func format(_ data: Data) -> String
 }
 
 /// JSON implementation of OutputFormat
@@ -21,37 +21,12 @@ struct JSONOutputFormat: OutputFormat {
         try encoder.encode(value)
     }
     
-    func parseOutput(_ line: String) -> CommandOutput {
-        guard let data = line.data(using: .utf8) else {
-            return CommandOutput(type: .error, message: "Invalid UTF-8 string: \(line)")
+    func format(_ data: Data) -> String {
+        guard let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] else {
+            return "Invalid JSON data"
         }
         
-        // Try to parse as JSON
-        if let _ = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
-            return CommandOutput(type: .json, message: line)
-        }
-        
-        // Check for specific error patterns
-        if line.contains("error:") || line.contains("Fatal:") {
-            return CommandOutput(type: .error, message: line)
-        }
-        
-        // Progress indicators
-        if let progress = parseProgress(from: line) {
-            return CommandOutput(type: .progress(progress), message: line)
-        }
-        
-        // Default to text output
-        return CommandOutput(type: .text, message: line)
-    }
-    
-    private func parseProgress(from line: String) -> Double? {
-        // Match patterns like [12.34%] or [45.67 percent]
-        let pattern = #/\[(\d+\.?\d*)%?\]/#
-        if let match = line.firstMatch(of: pattern) {
-            return Double(match.1)
-        }
-        return nil
+        return String(describing: json)
     }
 }
 
@@ -60,9 +35,9 @@ struct JSONOutputFormat: OutputFormat {
 /// Handles and processes output from Restic commands
 final class CommandOutputHandler: ProcessOutputHandler {
     private weak var displayViewModel: CommandDisplayViewModel?
-    private let outputFormat: OutputFormat
+    private let outputFormat: any OutputFormat
     
-    init(displayViewModel: CommandDisplayViewModel?, outputFormat: OutputFormat = JSONOutputFormat()) {
+    init(displayViewModel: CommandDisplayViewModel?, outputFormat: any OutputFormat = JSONOutputFormat()) {
         self.displayViewModel = displayViewModel
         self.outputFormat = outputFormat
         Task { @MainActor in
@@ -70,33 +45,23 @@ final class CommandOutputHandler: ProcessOutputHandler {
         }
     }
     
-    nonisolated func handleOutput(_ line: String) {
-        let output = outputFormat.parseOutput(line)
-        
+    func handleOutput(_ data: Data) {
+        let formattedOutput = outputFormat.format(data)
         Task { @MainActor in
-            displayViewModel?.appendOutput(line)
-            
-            if case .progress(let percentage) = output.type {
-                displayViewModel?.updateProgress(percentage)
-            }
+            await displayViewModel?.appendOutput(formattedOutput)
         }
     }
     
-    nonisolated func handleError(_ line: String) {
+    func handleError(_ data: Data) {
+        let errorOutput = String(data: data, encoding: .utf8) ?? ""
         Task { @MainActor in
-            displayViewModel?.appendError(line)
+            await displayViewModel?.appendError(errorOutput)
         }
     }
     
-    nonisolated func handleComplete(_ exitCode: Int32) {
+    func handleCompletion(_ exitCode: Int32) {
         Task { @MainActor in
-            if exitCode == 0 {
-                displayViewModel?.updateStatus(.completed)
-            } else {
-                displayViewModel?.updateStatus(.failed(code: exitCode))
-            }
-            displayViewModel?.isProcessing = false
-            displayViewModel?.finish()
+            await displayViewModel?.complete(exitCode: exitCode)
         }
     }
 }
