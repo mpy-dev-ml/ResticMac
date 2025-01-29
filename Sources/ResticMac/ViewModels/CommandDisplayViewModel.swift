@@ -33,7 +33,8 @@ struct OutputLine: Identifiable {
     let timestamp: Date
 }
 
-final class CommandDisplayViewModel: ObservableObject {
+@MainActor
+final class CommandDisplayViewModel: ObservableObject, @unchecked Sendable {
     @Published private(set) var isRunning = false
     @Published private(set) var progress: Double = 0
     @Published private(set) var output: [OutputLine] = []
@@ -44,69 +45,53 @@ final class CommandDisplayViewModel: ObservableObject {
     private let queue = DispatchQueue(label: "com.resticmac.commanddisplay", qos: .userInitiated)
     
     func start() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.isRunning = true
-            self.isProcessing = true
-            self.status = .running
-            self.progress = 0
-            self.output.removeAll()
-            AppLogger.shared.info("Command execution started")
-        }
+        isRunning = true
+        isProcessing = true
+        status = .running
+        progress = 0
+        output.removeAll()
+        AppLogger.shared.info("Command execution started")
     }
     
     func finish() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.isRunning = false
-            self.isProcessing = false
-            self.progress = 100
-            AppLogger.shared.info("Command execution completed")
-        }
+        isRunning = false
+        isProcessing = false
+        progress = 100
+        AppLogger.shared.info("Command execution completed")
     }
     
     func updateStatus(_ newStatus: CommandStatus) {
-        DispatchQueue.main.async { [weak self] in
-            self?.status = newStatus
-            AppLogger.shared.info("Command status updated: \(newStatus.description)")
-        }
+        status = newStatus
+        AppLogger.shared.info("Command status updated: \(newStatus.description)")
     }
     
     func updateProgress(_ percentage: Double) {
-        DispatchQueue.main.async { [weak self] in
-            self?.progress = percentage
-        }
+        progress = percentage
     }
     
     func appendOutput(_ line: String) {
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            self.appendLine(line, type: .standard)
+        Task { @MainActor in
+            appendLine(line, type: .standard)
         }
     }
     
     func appendError(_ line: String) {
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            self.appendLine(line, type: .error)
+        Task { @MainActor in
+            appendLine(line, type: .error)
         }
     }
     
     private func appendLine(_ text: String, type: OutputType) {
         let line = OutputLine(text: text, type: type, timestamp: Date())
-        
-        DispatchQueue.main.async {
-            self.output.append(line)
-            if self.output.count > self.maxLines {
-                self.output.removeFirst(self.output.count - self.maxLines)
-            }
+        output.append(line)
+        if output.count > maxLines {
+            output.removeFirst(output.count - maxLines)
         }
     }
     
     func appendCommand(_ command: String) {
-        queue.async { [weak self] in
-            guard let self = self else { return }
-            self.appendLine("> \(command)", type: .standard)
+        Task { @MainActor in
+            appendLine("> \(command)", type: .standard)
             AppLogger.shared.info("Executing command: \(command)")
         }
     }

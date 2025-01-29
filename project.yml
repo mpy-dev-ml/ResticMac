@@ -42,6 +42,8 @@ targets:
     deploymentTarget: "14.0"
     sources: 
       - path: Sources/ResticMac
+        excludes:
+          - "**/_disabled/**"
     dependencies:
       - package: SwiftShell
       - package: swift-log

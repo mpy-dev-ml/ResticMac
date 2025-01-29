@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import Combine
 
+@MainActor
 final class BackupViewModel: ObservableObject {
     @Published var selectedPaths: [URL] = []
     @Published var repositories: [Repository] = []
@@ -11,20 +12,22 @@ final class BackupViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var progress: SnapshotProgress?
     
-    private let resticService: ResticService
+    private var resticService: ResticService
     private var cancellables = Set<AnyCancellable>()
+    private var progressTask: Task<Void, Never>?
     
     init() {
-        Task { @MainActor in
-            self.resticService = await ResticService.shared
-            
-            // Subscribe to backup progress updates
-            resticService.snapshotProgressPublisher
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] progress in
-                    self?.progress = progress
-                }
-                .store(in: &cancellables)
+        self.resticService = ResticService.shared
+        startMonitoringProgress()
+    }
+    
+    private func startMonitoringProgress() {
+        progressTask?.cancel()
+        progressTask = Task { [weak self] in
+            guard let self = self else { return }
+            for await progress in self.resticService.snapshotProgress() {
+                self.progress = progress
+            }
         }
     }
     
@@ -51,17 +54,9 @@ final class BackupViewModel: ObservableObject {
     }
     
     @MainActor
-    func createBackup() async {
-        guard let repository = selectedRepository else {
-            self.errorMessage = "No repository selected"
-            self.showError = true
-            return
-        }
-        
-        guard !selectedPaths.isEmpty else {
-            self.errorMessage = "No paths selected"
-            self.showError = true
-            return
+    func startBackup() async throws {
+        guard let repository = selectedRepository, !selectedPaths.isEmpty else {
+            throw BackupError.noRepositorySelected
         }
         
         isLoading = true
@@ -69,11 +64,10 @@ final class BackupViewModel: ObservableObject {
         do {
             _ = try await resticService.createSnapshot(repository: repository, paths: selectedPaths)
             isLoading = false
-            // TODO: Handle successful snapshot creation
         } catch {
             self.errorMessage = error.localizedDescription
             self.showError = true
-            self.isLoading = false
+            throw error
         }
     }
     
@@ -85,6 +79,10 @@ final class BackupViewModel: ObservableObject {
     
     func removePath(_ url: URL) {
         selectedPaths.removeAll { $0 == url }
+    }
+    
+    deinit {
+        progressTask?.cancel()
     }
 }
 

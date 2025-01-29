@@ -1,0 +1,6 @@
+Sources/ResticMac/Views/_disabled/**/*
+Sources/ResticMac/Services/_disabled/**/*
+Sources/ResticMac/Views/CloudSettings/**/*
+Sources/ResticMac/Views/CloudTransfer/**/*
+Sources/ResticMac/Services/CloudError/**/*
+Sources/ResticMac/Services/CloudOptimizer/**/*

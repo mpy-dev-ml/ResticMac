@@ -28,14 +28,6 @@ let package = Package(
                 "KeychainAccess"
             ],
             path: "Sources/ResticMac",
-            exclude: [
-                "Views/_disabled",
-                "Services/_disabled",
-                "Views/CloudSettings",
-                "Views/CloudTransfer",
-                "Services/CloudError",
-                "Services/CloudOptimizer"
-            ],
             resources: [
                 .process("Resources")
             ],
@@ -57,9 +49,6 @@ let package = Package(
                 "KeychainAccess"
             ],
             path: "Tests/ResticMacTests",
-            exclude: [
-                "CloudAnalytics"
-            ],
             swiftSettings: [
                 .enableUpcomingFeature("BareSlashRegexLiterals"),
                 .enableUpcomingFeature("ConciseMagicFile"),

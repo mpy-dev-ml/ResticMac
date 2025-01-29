@@ -1,47 +1,65 @@
 import SwiftUI
 
 struct BackupView: View {
-    let repository: Repository
-    @ObservedObject var viewModel: RepositoryViewModel
+    @StateObject private var viewModel = BackupViewModel()
     @State private var showingCommandDisplay = false
-    @State private var showingPathPicker = false
-    @State private var selectedPaths: [URL] = []
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
+                // Repository Selection
+                Picker("Repository", selection: $viewModel.selectedRepository) {
+                    Text("Select Repository").tag(nil as Repository?)
+                    ForEach(viewModel.repositories) { repository in
+                        Text(repository.name).tag(Optional(repository))
+                    }
+                }
+                .pickerStyle(.menu)
+                
                 // Path Selection
-                List {
-                    ForEach(selectedPaths, id: \.self) { path in
-                        HStack {
-                            Text(path.lastPathComponent)
-                            Spacer()
-                            Button(action: {
-                                selectedPaths.removeAll { $0 == path }
-                            }) {
-                                Image(systemName: "minus.circle.fill")
-                                    .foregroundColor(.red)
+                PathSelector(selectedPaths: $viewModel.selectedPaths)
+                    .padding(.horizontal)
+                
+                // Progress View
+                if let progress = viewModel.progress {
+                    VStack(alignment: .leading) {
+                        Text("Backup Progress")
+                            .font(.headline)
+                        ProgressView(value: Double(progress.processedFiles), total: Double(progress.totalFiles)) {
+                            HStack {
+                                Text("\(progress.processedFiles) of \(progress.totalFiles) files")
+                                Spacer()
+                                Text(ByteCountFormatter.string(fromByteCount: progress.processedBytes, countStyle: .file))
                             }
+                            .font(.caption)
                         }
                     }
-                    
-                    Button(action: { showingPathPicker = true }) {
-                        Label("Add Path", systemImage: "plus.circle")
-                    }
+                    .padding()
                 }
                 
                 // Backup Button
                 Button(action: {
+                    showingCommandDisplay = true
                     Task {
-                        await createBackup()
+                        do {
+                            try await viewModel.startBackup()
+                            dismiss()
+                        } catch {
+                            // Error will be shown via viewModel.showError
+                        }
                     }
                 }) {
-                    Text("Create Backup")
-                        .frame(maxWidth: .infinity)
+                    if viewModel.isLoading {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                    } else {
+                        Text("Start Backup")
+                            .font(.headline)
+                    }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(selectedPaths.isEmpty)
+                .disabled(viewModel.selectedRepository == nil || viewModel.selectedPaths.isEmpty || viewModel.isLoading)
                 .padding()
             }
             .navigationTitle("Create Backup")
@@ -53,26 +71,16 @@ struct BackupView: View {
                 }
             }
         }
-        .fileImporter(
-            isPresented: $showingPathPicker,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: true
-        ) { result in
-            switch result {
-            case .success(let urls):
-                selectedPaths.append(contentsOf: urls)
-            case .failure(let error):
-                print("Failed to select paths: \(error.localizedDescription)")
-            }
+        .alert("Error", isPresented: $viewModel.showError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(viewModel.errorMessage)
         }
-    }
-    
-    private func createBackup() async {
-        do {
-            let _ = try await viewModel.createSnapshot(repository: repository, paths: selectedPaths)
-            dismiss()
-        } catch {
-            print("Failed to create backup: \(error.localizedDescription)")
+        .sheet(isPresented: $showingCommandDisplay) {
+            CommandDisplayView(viewModel: CommandDisplayViewModel())
+        }
+        .task {
+            await viewModel.loadRepositories()
         }
     }
 }
@@ -118,7 +126,7 @@ struct BackupContentView: View {
                 showingCommandDisplay = true
                 Task {
                     do {
-                        try await viewModel.createBackup()
+                        try await $viewModel.createBackup
                     } catch {
                         // Error will be shown in CommandDisplayView
                     }
@@ -166,6 +174,33 @@ struct PathPicker: View {
                         }
                     }
                 }
+        }
+    }
+}
+
+struct PathSelector: View {
+    @Binding var selectedPaths: [URL]
+    
+    var body: some View {
+        List {
+            ForEach(selectedPaths, id: \.self) { path in
+                HStack {
+                    Text(path.lastPathComponent)
+                    Spacer()
+                    Button(action: {
+                        selectedPaths.removeAll { $0 == path }
+                    }) {
+                        Image(systemName: "minus.circle.fill")
+                            .foregroundColor(.red)
+                    }
+                }
+            }
+            
+            Button(action: {
+                // Add path logic here
+            }) {
+                Label("Add Path", systemImage: "plus.circle")
+            }
         }
     }
 }

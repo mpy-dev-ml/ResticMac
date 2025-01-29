@@ -34,34 +34,60 @@ struct JSONOutputFormat: OutputFormat {
 
 /// Handles and processes output from Restic commands
 final class CommandOutputHandler: ProcessOutputHandler {
-    private weak var displayViewModel: CommandDisplayViewModel?
+    private let displayViewModel: CommandDisplayViewModel?
     private let outputFormat: any OutputFormat
     
     init(displayViewModel: CommandDisplayViewModel?, outputFormat: any OutputFormat = JSONOutputFormat()) {
         self.displayViewModel = displayViewModel
         self.outputFormat = outputFormat
         Task { @MainActor in
-            await displayViewModel?.start()
+            displayViewModel?.start()
         }
     }
     
-    func handleOutput(_ data: Data) {
+    nonisolated func handleOutput(_ line: String) {
+        Task { @MainActor [displayViewModel] in
+            displayViewModel?.appendOutput(line)
+        }
+    }
+    
+    nonisolated func handleError(_ line: String) {
+        Task { @MainActor [displayViewModel] in
+            displayViewModel?.appendError(line)
+        }
+    }
+    
+    nonisolated func handleComplete(_ exitCode: Int32) {
+        Task { @MainActor [displayViewModel] in
+            if exitCode == 0 {
+                displayViewModel?.finish()
+            } else {
+                displayViewModel?.updateStatus(.failed(code: exitCode))
+            }
+        }
+    }
+    
+    nonisolated func handleOutput(_ data: Data) {
         let formattedOutput = outputFormat.format(data)
-        Task { @MainActor in
-            await displayViewModel?.appendOutput(formattedOutput)
+        Task { @MainActor [displayViewModel] in
+            displayViewModel?.appendOutput(formattedOutput)
         }
     }
     
-    func handleError(_ data: Data) {
+    nonisolated func handleError(_ data: Data) {
         let errorOutput = String(data: data, encoding: .utf8) ?? ""
-        Task { @MainActor in
-            await displayViewModel?.appendError(errorOutput)
+        Task { @MainActor [displayViewModel] in
+            displayViewModel?.appendError(errorOutput)
         }
     }
     
-    func handleCompletion(_ exitCode: Int32) {
-        Task { @MainActor in
-            await displayViewModel?.complete(exitCode: exitCode)
+    nonisolated func handleCompletion(_ exitCode: Int32) {
+        Task { @MainActor [displayViewModel] in
+            if exitCode == 0 {
+                displayViewModel?.finish()
+            } else {
+                displayViewModel?.updateStatus(.failed(code: exitCode))
+            }
         }
     }
 }
@@ -87,16 +113,4 @@ struct CommandOutput: Sendable {
 enum CommandProgress: Sendable {
     case indeterminate
     case percentage(Double)
-    case complete
-    
-    var description: String {
-        switch self {
-        case .indeterminate:
-            return "Processing..."
-        case .percentage(let value):
-            return "\(Int(value))% Complete"
-        case .complete:
-            return "Completed"
-        }
-    }
 }

@@ -39,7 +39,9 @@ final class RepositoryViewModel: ObservableObject {
         isLoading = true
         
         do {
-            let results = try await resticService.scanForRepositories()
+            // Use the home directory as the default scan location
+            let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+            let results = try await resticService.scanForRepositories(in: homeDirectory)
             self.repositories = results.compactMap { result in
                 guard result.isValid else { return nil }
                 return Repository(name: result.path.lastPathComponent, path: result.path)
