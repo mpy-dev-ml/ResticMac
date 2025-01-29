@@ -10,11 +10,11 @@ actor AppLoggerActor {
 @AppLoggerActor
 final class AppLogger: @unchecked Sendable {
     static let shared = AppLogger()
-    private let logger: Logger
+    private let logger: Logging.Logger
     private let osLog: OSLog
     
     private init() {
-        self.logger = Logger(label: "com.resticmac.app")
+        self.logger = Logging.Logger(label: "com.resticmac.app")
         self.osLog = OSLog(subsystem: "com.resticmac.app", category: "default")
     }
     
@@ -27,11 +27,11 @@ final class AppLogger: @unchecked Sendable {
         line: UInt = #line
     ) where T: Encodable {
         Task { @AppLoggerActor in
-            var logMetadata: Logger.Metadata = [
+            var logMetadata: Logging.Logger.Metadata = [
                 "file": "\(file)",
                 "function": "\(function)",
                 "line": "\(line)"
-            ] as [String: Logger.MetadataValue]
+            ] as [String: Logging.Logger.MetadataValue]
             
             if let metadata = metadata {
                 do {
@@ -60,11 +60,11 @@ final class AppLogger: @unchecked Sendable {
         line: UInt = #line
     ) where T: Encodable {
         Task { @AppLoggerActor in
-            var logMetadata: Logger.Metadata = [
+            var logMetadata: Logging.Logger.Metadata = [
                 "file": "\(file)",
                 "function": "\(function)",
                 "line": "\(line)"
-            ] as [String: Logger.MetadataValue]
+            ] as [String: Logging.Logger.MetadataValue]
             
             if let metadata = metadata {
                 do {
@@ -93,11 +93,11 @@ final class AppLogger: @unchecked Sendable {
         line: UInt = #line
     ) where T: Encodable {
         Task { @AppLoggerActor in
-            var logMetadata: Logger.Metadata = [
+            var logMetadata: Logging.Logger.Metadata = [
                 "file": "\(file)",
                 "function": "\(function)",
                 "line": "\(line)"
-            ] as [String: Logger.MetadataValue]
+            ] as [String: Logging.Logger.MetadataValue]
             
             if let metadata = metadata {
                 do {
@@ -126,11 +126,11 @@ final class AppLogger: @unchecked Sendable {
         line: UInt = #line
     ) where T: Encodable {
         Task { @AppLoggerActor in
-            var logMetadata: Logger.Metadata = [
+            var logMetadata: Logging.Logger.Metadata = [
                 "file": "\(file)",
                 "function": "\(function)",
                 "line": "\(line)"
-            ] as [String: Logger.MetadataValue]
+            ] as [String: Logging.Logger.MetadataValue]
             
             if let metadata = metadata {
                 do {

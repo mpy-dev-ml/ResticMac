@@ -24,13 +24,31 @@ final class RepositoryViewModel: ObservableObject {
         Dictionary(uniqueKeysWithValues: repositories.map { ($0.id, $0) })
     }
     
-    init(resticService: ResticService = .shared, commandDisplay: CommandDisplayViewModel) {
-        self.resticService = resticService
+    init(commandDisplay: CommandDisplayViewModel) {
         self.commandDisplay = commandDisplay
         
-        DispatchQueue.main.async {
-            self.resticService.setCommandDisplay(commandDisplay)
-            self.scanForRepositories()
+        Task { @MainActor in
+            self.resticService = await ResticService.shared
+            await resticService.setCommandDisplay(commandDisplay)
+            await scanForRepositories()
+        }
+    }
+    
+    @MainActor
+    func scanForRepositories() async {
+        isLoading = true
+        
+        do {
+            let results = try await resticService.scanForRepositories()
+            self.repositories = results.compactMap { result in
+                guard result.isValid else { return nil }
+                return Repository(name: result.path.lastPathComponent, path: result.path)
+            }
+            isLoading = false
+        } catch {
+            errorMessage = error.localizedDescription
+            showError = true
+            isLoading = false
         }
     }
     
@@ -54,52 +72,19 @@ final class RepositoryViewModel: ObservableObject {
         }
     }
     
-    func scanForRepositories() {
-        isLoading = true
-        
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
-            
-            do {
-                let defaultDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-                let results = try self.resticService.scanForRepositories(in: defaultDirectory)
-                
-                DispatchQueue.main.async {
-                    self.repositories = results.compactMap { result in
-                        guard result.isValid else { return nil }
-                        return Repository(name: result.path.lastPathComponent, path: result.path)
-                    }
-                    self.isLoading = false
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.errorMessage = error.localizedDescription
-                    self.showError = true
-                    self.isLoading = false
-                }
-            }
-        }
-    }
-    
     func createRepository(name: String, at path: URL) {
         isCreatingRepository = true
         
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
-            
+        Task { @MainActor in
             do {
-                let repository = try self.resticService.initializeRepository(name: name, path: path)
-                DispatchQueue.main.async {
-                    self.repositories.append(repository)
-                    self.selectedRepository = repository
-                    self.isCreatingRepository = false
-                }
+                let repository = try await resticService.initializeRepository(name: name, path: path)
+                self.repositories.append(repository)
+                self.selectedRepository = repository
+                self.isCreatingRepository = false
             } catch {
-                DispatchQueue.main.async {
-                    self.errorMessage = error.localizedDescription
-                    self.showError = true
-                    self.isCreatingRepository = false
-                }
+                self.errorMessage = error.localizedDescription
+                self.showError = true
+                self.isCreatingRepository = false
             }
         }
     }
@@ -107,26 +92,20 @@ final class RepositoryViewModel: ObservableObject {
     func deleteRepository(_ repository: Repository) {
         isLoading = true
         
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
-            
+        Task { @MainActor in
             do {
-                try self.resticService.deleteRepository(at: repository.path)
-                DispatchQueue.main.async {
-                    if let index = self.repositories.firstIndex(where: { $0.id == repository.id }) {
-                        self.repositories.remove(at: index)
-                    }
-                    if self.selectedRepository?.id == repository.id {
-                        self.selectedRepository = nil
-                    }
-                    self.isLoading = false
+                try await resticService.deleteRepository(at: repository.path)
+                if let index = self.repositories.firstIndex(where: { $0.id == repository.id }) {
+                    self.repositories.remove(at: index)
                 }
+                if self.selectedRepository?.id == repository.id {
+                    self.selectedRepository = nil
+                }
+                self.isLoading = false
             } catch {
-                DispatchQueue.main.async {
-                    self.errorMessage = error.localizedDescription
-                    self.showError = true
-                    self.isLoading = false
-                }
+                self.errorMessage = error.localizedDescription
+                self.showError = true
+                self.isLoading = false
             }
         }
     }
@@ -143,18 +122,12 @@ final class RepositoryViewModel: ObservableObject {
     }
     
     func createSnapshot(repository: Repository, paths: [URL], completion: @escaping (Result<Snapshot, Error>) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
-            
+        Task { @MainActor in
             do {
-                let snapshot = try self.resticService.createSnapshot(repository: repository, paths: paths)
-                DispatchQueue.main.async {
-                    completion(.success(snapshot))
-                }
+                let snapshot = try await resticService.createSnapshot(repository: repository, paths: paths)
+                completion(.success(snapshot))
             } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error))
-                }
+                completion(.failure(error))
             }
         }
     }

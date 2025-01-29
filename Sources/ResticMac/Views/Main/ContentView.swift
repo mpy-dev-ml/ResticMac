@@ -4,13 +4,7 @@ struct ContentView: View {
     @State private var selectedTab: Tab = .repository
     @State private var showWelcomeSheet = !UserDefaults.standard.bool(forKey: "hasSeenWelcome")
     @StateObject private var commandDisplay = CommandDisplayViewModel()
-    @StateObject private var resticService: ResticService
-    
-    init() {
-        let executor = ProcessExecutor()
-        let service = ResticService(executor: executor)
-        _resticService = StateObject(wrappedValue: service)
-    }
+    @StateObject private var resticService = ResticService(executor: ProcessExecutor())
     
     enum Tab: String, CaseIterable, Identifiable {
         case repository

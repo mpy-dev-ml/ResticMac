@@ -19,12 +19,13 @@ protocol ResticServiceProtocol {
     func restoreProgress() -> AsyncStream<RestoreProgress>
 }
 
-@globalActor actor ResticServiceActor {
-    static let shared = ResticServiceActor()
-}
-
-@ResticServiceActor
-final class ResticService: ResticServiceProtocol {
+@MainActor
+final class ResticService: ObservableObject, ResticServiceProtocol {
+    @Published private(set) var isProcessing = false
+    @Published private(set) var currentProgress: SnapshotProgress?
+    
+    let snapshotProgressPublisher = PassthroughSubject<SnapshotProgress, Never>()
+    
     private static var instance: ResticService?
     
     static var shared: ResticService {
@@ -341,24 +342,28 @@ final class ResticService: ResticServiceProtocol {
         }
     }
     
-    func snapshotProgress() -> AsyncStream<SnapshotProgress> {
+    nonisolated func snapshotProgress() -> AsyncStream<SnapshotProgress> {
         AsyncStream { continuation in
-            let subscription = progressSubject.sink { progress in
-                continuation.yield(progress)
-            }
-            continuation.onTermination = { _ in
-                subscription.cancel()
+            Task { @MainActor in
+                let subscription = progressSubject.sink { progress in
+                    continuation.yield(progress)
+                }
+                continuation.onTermination = { _ in
+                    subscription.cancel()
+                }
             }
         }
     }
     
-    func restoreProgress() -> AsyncStream<RestoreProgress> {
+    nonisolated func restoreProgress() -> AsyncStream<RestoreProgress> {
         AsyncStream { continuation in
-            let subscription = restoreSubject.sink { progress in
-                continuation.yield(progress)
-            }
-            continuation.onTermination = { _ in
-                subscription.cancel()
+            Task { @MainActor in
+                let subscription = restoreSubject.sink { progress in
+                    continuation.yield(progress)
+                }
+                continuation.onTermination = { _ in
+                    subscription.cancel()
+                }
             }
         }
     }

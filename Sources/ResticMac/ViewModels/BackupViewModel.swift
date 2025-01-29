@@ -14,48 +14,44 @@ final class BackupViewModel: ObservableObject {
     private let resticService: ResticService
     private var cancellables = Set<AnyCancellable>()
     
-    init(resticService: ResticService = .shared) {
-        self.resticService = resticService
-        
-        // Subscribe to backup progress updates
-        resticService.snapshotProgressPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] progress in
-                self?.progress = progress
-            }
-            .store(in: &cancellables)
-    }
-    
-    func loadRepositories() {
-        isLoading = true
-        
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
+    init() {
+        Task { @MainActor in
+            self.resticService = await ResticService.shared
             
-            do {
-                // Scan for repositories in the default directory
-                let defaultDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-                let results = try self.resticService.scanForRepositories(in: defaultDirectory)
-                
-                DispatchQueue.main.async {
-                    // Convert scan results to repositories
-                    self.repositories = results.compactMap { result in
-                        guard result.isValid else { return nil }
-                        return Repository(name: result.path.lastPathComponent, path: result.path)
-                    }
-                    self.isLoading = false
+            // Subscribe to backup progress updates
+            resticService.snapshotProgressPublisher
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] progress in
+                    self?.progress = progress
                 }
-            } catch {
-                DispatchQueue.main.async {
-                    self.errorMessage = error.localizedDescription
-                    self.showError = true
-                    self.isLoading = false
-                }
-            }
+                .store(in: &cancellables)
         }
     }
     
-    func createBackup() {
+    @MainActor
+    func loadRepositories() async {
+        isLoading = true
+        
+        do {
+            // Scan for repositories in the default directory
+            let defaultDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            let results = try await resticService.scanForRepositories(in: defaultDirectory)
+            
+            // Convert scan results to repositories
+            self.repositories = results.compactMap { result in
+                guard result.isValid else { return nil }
+                return Repository(name: result.path.lastPathComponent, path: result.path)
+            }
+            self.isLoading = false
+        } catch {
+            self.errorMessage = error.localizedDescription
+            self.showError = true
+            self.isLoading = false
+        }
+    }
+    
+    @MainActor
+    func createBackup() async {
         guard let repository = selectedRepository else {
             self.errorMessage = "No repository selected"
             self.showError = true
@@ -70,22 +66,14 @@ final class BackupViewModel: ObservableObject {
         
         isLoading = true
         
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
-            
-            do {
-                _ = try self.resticService.createSnapshot(repository: repository, paths: selectedPaths)
-                DispatchQueue.main.async {
-                    self.isLoading = false
-                    // TODO: Handle successful snapshot creation
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.errorMessage = error.localizedDescription
-                    self.showError = true
-                    self.isLoading = false
-                }
-            }
+        do {
+            _ = try await resticService.createSnapshot(repository: repository, paths: selectedPaths)
+            isLoading = false
+            // TODO: Handle successful snapshot creation
+        } catch {
+            self.errorMessage = error.localizedDescription
+            self.showError = true
+            self.isLoading = false
         }
     }
     

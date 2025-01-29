@@ -8,7 +8,7 @@ actor RepositoryStorageActor {
 
 @RepositoryStorageActor
 class RepositoryStorage {
-    private let logger = Logger(label: "com.resticmac.RepositoryStorage")
+    private let logger = Logging.Logger(label: "com.resticmac.RepositoryStorage")
     private let repositoryKey = "com.resticmac.repositories"
     
     // Use static shared instance to avoid Sendable issues

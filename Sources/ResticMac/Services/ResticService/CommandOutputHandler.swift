@@ -58,7 +58,6 @@ struct JSONOutputFormat: OutputFormat {
 // MARK: - Command Output Handler
 
 /// Handles and processes output from Restic commands
-@MainActor
 final class CommandOutputHandler: ProcessOutputHandler {
     private weak var displayViewModel: CommandDisplayViewModel?
     private let outputFormat: OutputFormat
@@ -66,27 +65,27 @@ final class CommandOutputHandler: ProcessOutputHandler {
     init(displayViewModel: CommandDisplayViewModel?, outputFormat: OutputFormat = JSONOutputFormat()) {
         self.displayViewModel = displayViewModel
         self.outputFormat = outputFormat
-        Task {
+        Task { @MainActor in
             await displayViewModel?.start()
         }
     }
     
-    nonisolated func handleOutput(_ line: String) async {
+    nonisolated func handleOutput(_ line: String) {
         let output = outputFormat.parseOutput(line)
         
-        await Task { @MainActor in
+        Task { @MainActor in
             displayViewModel?.appendOutput(line)
             
             if case .progress(let percentage) = output.type {
-                await displayViewModel?.updateProgress(percentage)
+                displayViewModel?.updateProgress(percentage)
             }
-        }.value
+        }
     }
     
-    nonisolated func handleError(_ line: String) async {
-        await Task { @MainActor in
+    nonisolated func handleError(_ line: String) {
+        Task { @MainActor in
             displayViewModel?.appendError(line)
-        }.value
+        }
     }
     
     nonisolated func handleComplete(_ exitCode: Int32) {
@@ -97,7 +96,7 @@ final class CommandOutputHandler: ProcessOutputHandler {
                 displayViewModel?.updateStatus(.failed(code: exitCode))
             }
             displayViewModel?.isProcessing = false
-            await displayViewModel?.finish()
+            displayViewModel?.finish()
         }
     }
 }

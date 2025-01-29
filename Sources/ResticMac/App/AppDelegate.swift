@@ -2,7 +2,7 @@ import SwiftUI
 import Logging
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    private let logger = Logger(label: "com.resticmac.AppDelegate")
+    private let logger = Logging.Logger(label: "com.resticmac.AppDelegate")
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         logger.info("ResticMac launched")
