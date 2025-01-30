@@ -6,7 +6,7 @@ enum OutputType {
     case error
 }
 
-enum CommandStatus {
+enum CommandStatus: CustomStringConvertible {
     case notStarted
     case running
     case completed
@@ -50,19 +50,25 @@ final class CommandDisplayViewModel: ObservableObject, @unchecked Sendable {
         status = .running
         progress = 0
         output.removeAll()
-        AppLogger.shared.info("Command execution started")
+        Task { @AppLoggerActor in
+            AppLogger.shared.info("Command execution started", metadata: ["status": "started"] as [String: String])
+        }
     }
     
     func finish() {
         isRunning = false
         isProcessing = false
         progress = 100
-        AppLogger.shared.info("Command execution completed")
+        Task { @AppLoggerActor in
+            AppLogger.shared.info("Command execution completed", metadata: ["status": "completed"] as [String: String])
+        }
     }
     
     func updateStatus(_ newStatus: CommandStatus) {
         status = newStatus
-        AppLogger.shared.info("Command status updated: \(newStatus.description)")
+        Task { @AppLoggerActor in
+            AppLogger.shared.info("Command status updated", metadata: ["status": newStatus.description] as [String: String])
+        }
     }
     
     func updateProgress(_ percentage: Double) {
@@ -92,7 +98,9 @@ final class CommandDisplayViewModel: ObservableObject, @unchecked Sendable {
     func appendCommand(_ command: String) {
         Task { @MainActor in
             appendLine("> \(command)", type: .standard)
-            AppLogger.shared.info("Executing command: \(command)")
+            Task { @AppLoggerActor in
+                AppLogger.shared.info("Executing command", metadata: ["command": command] as [String: String])
+            }
         }
     }
 }

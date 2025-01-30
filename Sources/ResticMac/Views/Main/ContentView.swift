@@ -4,7 +4,12 @@ struct ContentView: View {
     @State private var selectedTab: Tab = .repository
     @State private var showWelcomeSheet = !UserDefaults.standard.bool(forKey: "hasSeenWelcome")
     @StateObject private var commandDisplay = CommandDisplayViewModel()
-    @StateObject private var resticService = ResticService(executor: ProcessExecutor())
+    @StateObject private var resticService: ResticService
+    
+    init() {
+        let executor = ProcessExecutor()
+        _resticService = StateObject(wrappedValue: ResticService(executor: executor))
+    }
     
     enum Tab: String, CaseIterable, Identifiable {
         case repository
@@ -41,7 +46,7 @@ struct ContentView: View {
                 RepositoryView(resticService: resticService, commandDisplay: commandDisplay)
                     .tag(Tab.repository)
                 
-                ComingSoonView(title: "Backup", message: "Backup functionality coming soon")
+                BackupView(resticService: resticService)
                     .tag(Tab.backup)
                 
                 ComingSoonView(title: "Schedule", message: "Scheduling functionality coming soon")
@@ -60,7 +65,9 @@ struct ContentView: View {
             }
         }
         .task {
-            await resticService.setCommandDisplay(commandDisplay)
+            Task {
+                await resticService.setCommandDisplay(commandDisplay)
+            }
         }
     }
 }

@@ -41,6 +41,52 @@ enum ResticError: LocalizedError {
     }
 }
 
+enum EntryType: String, Codable {
+    case file = "file"
+    case directory = "dir"
+    case symlink = "symlink"
+}
+
+struct RepositoryState: Codable {
+    let version: Int
+    let id: String
+    let status: String
+}
+
+struct RepositoryStats: Codable {
+    let totalSize: UInt64
+    let totalFiles: UInt64
+    let uniqueSize: UInt64
+}
+
+struct RepositoryHealth: Codable {
+    let isLocked: Bool
+    let needsIndexRebuild: Bool
+    let errors: [String]
+    
+    var isHealthy: Bool {
+        !isLocked && !needsIndexRebuild && errors.isEmpty
+    }
+}
+
+struct Progress: Codable {
+    let messageType: String
+    let percentDone: Double
+    let totalFiles: Int
+    let totalBytes: UInt64
+    let currentFiles: Int
+    let currentBytes: UInt64
+    
+    enum CodingKeys: String, CodingKey {
+        case messageType = "message_type"
+        case percentDone = "percent_done"
+        case totalFiles = "total_files"
+        case totalBytes = "total_bytes"
+        case currentFiles = "files_done"
+        case currentBytes = "bytes_done"
+    }
+}
+
 struct ResticCommand {
     let executable: String = "/usr/local/bin/restic"
     let repository: URL

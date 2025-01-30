@@ -12,12 +12,12 @@ final class BackupViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var progress: SnapshotProgress?
     
-    private var resticService: ResticService
+    private let resticService: any ResticServiceProtocol
     private var cancellables = Set<AnyCancellable>()
     private var progressTask: Task<Void, Never>?
     
-    init() {
-        self.resticService = ResticService.shared
+    init(resticService: any ResticServiceProtocol) {
+        self.resticService = resticService
         startMonitoringProgress()
     }
     

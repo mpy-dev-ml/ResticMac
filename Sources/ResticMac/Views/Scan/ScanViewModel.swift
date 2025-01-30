@@ -19,7 +19,17 @@ class ScanViewModel: ObservableObject {
             isScanning = true
             defer { isScanning = false }
             
-            repositories = try await resticService.scanForRepositories(in: url)
+            let service = self.resticService
+            repositories = try await withCheckedThrowingContinuation { continuation in
+                Task {
+                    do {
+                        let repos = try await service.scanForRepositories(in: url)
+                        continuation.resume(returning: repos)
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
         } catch {
             self.error = error
         }

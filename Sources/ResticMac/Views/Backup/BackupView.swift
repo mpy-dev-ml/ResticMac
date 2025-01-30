@@ -1,9 +1,13 @@
 import SwiftUI
 
 struct BackupView: View {
-    @StateObject private var viewModel = BackupViewModel()
+    @StateObject private var viewModel: BackupViewModel
     @State private var showingCommandDisplay = false
     @Environment(\.dismiss) private var dismiss
+    
+    init(resticService: any ResticServiceProtocol) {
+        _viewModel = StateObject(wrappedValue: BackupViewModel(resticService: resticService))
+    }
     
     var body: some View {
         NavigationView {
@@ -174,33 +178,6 @@ struct PathPicker: View {
                         }
                     }
                 }
-        }
-    }
-}
-
-struct PathSelector: View {
-    @Binding var selectedPaths: [URL]
-    
-    var body: some View {
-        List {
-            ForEach(selectedPaths, id: \.self) { path in
-                HStack {
-                    Text(path.lastPathComponent)
-                    Spacer()
-                    Button(action: {
-                        selectedPaths.removeAll { $0 == path }
-                    }) {
-                        Image(systemName: "minus.circle.fill")
-                            .foregroundColor(.red)
-                    }
-                }
-            }
-            
-            Button(action: {
-                // Add path logic here
-            }) {
-                Label("Add Path", systemImage: "plus.circle")
-            }
         }
     }
 }

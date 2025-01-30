@@ -1,24 +1,6 @@
 import SwiftUI
 import Foundation
 
-// MARK: - Repository Types
-struct RepositoryStats: Codable {
-    let totalSize: UInt64
-    let totalFiles: UInt64
-    let uniqueSize: UInt64
-}
-
-struct RepositoryHealth {
-    enum Status {
-        case healthy
-        case warning
-        case error
-    }
-    
-    let status: Status
-    let issues: [String]
-}
-
 class PreviewResticService: ResticServiceProtocol {
     func setCommandDisplay(_ display: CommandDisplayViewModel) async {}
     func verifyInstallation() async throws {}
@@ -66,14 +48,28 @@ class PreviewResticService: ResticServiceProtocol {
     
     func snapshotProgress() -> AsyncStream<SnapshotProgress> {
         AsyncStream { continuation in
-            continuation.yield(SnapshotProgress(type: .pruning, current: 0, total: 0, percentage: 0.0))
+            continuation.yield(SnapshotProgress(
+                messageType: "status",
+                percentDone: 0.0,
+                totalFiles: 0,
+                totalBytes: 0,
+                currentFiles: 0,
+                currentBytes: 0
+            ))
             continuation.finish()
         }
     }
     
     func restoreProgress() -> AsyncStream<RestoreProgress> {
         AsyncStream { continuation in
-            continuation.yield(RestoreProgress(output: ""))
+            continuation.yield(RestoreProgress(
+                messageType: "status",
+                percentDone: 0.0,
+                totalFiles: 0,
+                totalBytes: 0,
+                restoredFiles: 0,
+                restoredBytes: 0
+            ))
             continuation.finish()
         }
     }
@@ -83,11 +79,19 @@ class PreviewResticService: ResticServiceProtocol {
     func pruneRepository(repository: Repository) async throws {}
     
     func getRepositoryStats(_ repository: Repository) async throws -> RepositoryStats {
-        return RepositoryStats(totalSize: 0, totalFiles: 0, uniqueSize: 0)
+        return RepositoryStats(
+            totalSize: 0,
+            totalFiles: 0,
+            uniqueSize: 0
+        )
     }
     
     func checkRepositoryHealth(_ repository: Repository) async throws -> RepositoryHealth {
-        return RepositoryHealth(status: .healthy, issues: [])
+        return RepositoryHealth(
+            isLocked: false,
+            needsIndexRebuild: false,
+            errors: []
+        )
     }
 }
 

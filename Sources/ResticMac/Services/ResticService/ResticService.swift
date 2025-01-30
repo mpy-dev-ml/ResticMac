@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import os
 import SwiftShell
+import KeychainAccess
 
 // Replace global actor with traditional singleton
 protocol ResticServiceProtocol {
@@ -25,7 +26,7 @@ protocol ResticServiceProtocol {
 
 // MARK: - ResticError
 enum ResticError: LocalizedError, Sendable {
-    case installationNotFound
+    case notInstalled
     case invalidRepository(path: String)
     case repositoryInitializationFailed(path: String, reason: String)
     case repositoryAccessDenied(path: String)
@@ -33,7 +34,7 @@ enum ResticError: LocalizedError, Sendable {
     case snapshotNotFound(id: String)
     case restoreFailed(reason: String)
     case invalidCommand(description: String)
-    case commandExecutionFailed(command: String, error: String)
+    case commandFailed(underlying: Error)
     case unexpectedOutput(description: String)
     case deletionFailed(path: String, underlying: any Error)
     case invalidConfiguration(reason: String)
@@ -41,7 +42,7 @@ enum ResticError: LocalizedError, Sendable {
     
     var errorDescription: String? {
         switch self {
-        case .installationNotFound:
+        case .notInstalled:
             "Restic installation not found. Please ensure Restic is installed and accessible."
         case .invalidRepository(let path):
             "Invalid repository at path: \(path)"
@@ -57,8 +58,8 @@ enum ResticError: LocalizedError, Sendable {
             "Failed to restore: \(reason)"
         case .invalidCommand(let description):
             "Invalid command: \(description)"
-        case .commandExecutionFailed(let command, let error):
-            "Command '\(command)' failed: \(error)"
+        case .commandFailed(let underlying):
+            "Command failed: \(underlying.localizedDescription)"
         case .unexpectedOutput(let description):
             "Unexpected output: \(description)"
         case .deletionFailed(let path, let error):
@@ -72,7 +73,7 @@ enum ResticError: LocalizedError, Sendable {
     
     var recoverySuggestion: String? {
         switch self {
-        case .installationNotFound:
+        case .notInstalled:
             "Install Restic using Homebrew: brew install restic"
         case .invalidRepository:
             "Check if the repository path exists and is accessible"
@@ -84,7 +85,7 @@ enum ResticError: LocalizedError, Sendable {
             "List available snapshots using 'snapshots' command"
         case .restoreFailed:
             "Verify target path is writable and has sufficient space"
-        case .invalidCommand, .commandExecutionFailed, .unexpectedOutput, .repositoryInitializationFailed:
+        case .invalidCommand, .commandFailed, .unexpectedOutput, .repositoryInitializationFailed:
             "Check logs for detailed error information"
         case .deletionFailed:
             "Check file permissions and ensure you have access to the repository"
@@ -98,106 +99,127 @@ enum ResticError: LocalizedError, Sendable {
 
 @MainActor
 final class ResticService: ObservableObject, ResticServiceProtocol {
-    @Published private(set) var isProcessing = false
-    @Published private(set) var currentProgress: SnapshotProgress?
-    
-    private let progressSubject = PassthroughSubject<SnapshotProgress, Never>()
-    private let restoreSubject = PassthroughSubject<RestoreProgress, Never>()
-    private var progressContinuation: AsyncStream<SnapshotProgress>.Continuation?
-    private var restoreContinuation: AsyncStream<RestoreProgress>.Continuation?
-    
-    private static var instance: ResticService?
     private let executor: ProcessExecutor
     private var displayViewModel: CommandDisplayViewModel?
-    private let logger = Logger(label: "com.resticmac.service")
+    @Published private(set) var isProcessing = false
     
-    static var shared: ResticService {
-        guard let instance = instance else {
-            fatalError("ResticService not initialised. Call setup() first.")
-        }
-        return instance
-    }
+    private var snapshotProgressStream: AsyncStream<Progress>?
+    private var snapshotProgressContinuation: AsyncStream<Progress>.Continuation?
+    private var restoreProgressStream: AsyncStream<Progress>?
+    private var restoreProgressContinuation: AsyncStream<Progress>.Continuation?
     
-    static func setup() {
-        guard instance == nil else { return }
-        instance = ResticService()
-    }
+    private let keychain = Keychain(service: "com.resticmac.app")
     
-    private init() {
-        self.executor = ProcessExecutor()
+    init(executor: ProcessExecutor = ProcessExecutor()) {
+        self.executor = executor
         setupProgressStreams()
     }
     
     private func setupProgressStreams() {
-        var progressContinuation: AsyncStream<SnapshotProgress>.Continuation?
-        let progressStream = AsyncStream<SnapshotProgress> { continuation in
-            progressContinuation = continuation
+        snapshotProgressStream = AsyncStream { continuation in
+            snapshotProgressContinuation = continuation
         }
-        self.progressContinuation = progressContinuation
         
-        var restoreContinuation: AsyncStream<RestoreProgress>.Continuation?
-        let restoreStream = AsyncStream<RestoreProgress> { continuation in
-            restoreContinuation = continuation
-        }
-        self.restoreContinuation = restoreContinuation
-    }
-    
-    func snapshotProgress() -> AsyncStream<SnapshotProgress> {
-        AsyncStream { continuation in
-            progressSubject
-                .receive(on: DispatchQueue.main)
-                .sink { progress in
-                    continuation.yield(progress)
-                }
-                .store(in: &Set<AnyCancellable>())
+        restoreProgressStream = AsyncStream { continuation in
+            restoreProgressContinuation = continuation
         }
     }
     
-    func restoreProgress() -> AsyncStream<RestoreProgress> {
-        AsyncStream { continuation in
-            restoreSubject
-                .receive(on: DispatchQueue.main)
-                .sink { progress in
-                    continuation.yield(progress)
-                }
-                .store(in: &Set<AnyCancellable>())
-        }
+    func snapshotProgress() -> AsyncStream<Progress> {
+        snapshotProgressStream ?? AsyncStream { _ in }
     }
     
-    private func emitProgress(_ progress: SnapshotProgress) {
-        Task { @MainActor in
-            currentProgress = progress
-            progressSubject.send(progress)
-            progressContinuation?.yield(progress)
-        }
+    func restoreProgress() -> AsyncStream<Progress> {
+        restoreProgressStream ?? AsyncStream { _ in }
     }
     
-    private func emitRestoreProgress(_ progress: RestoreProgress) {
-        Task { @MainActor in
-            restoreSubject.send(progress)
-            restoreContinuation?.yield(progress)
-        }
+    private func emitProgress(_ progress: Progress) {
+        snapshotProgressContinuation?.yield(progress)
     }
     
-    func setCommandDisplay(_ display: CommandDisplayViewModel) {
+    private func emitRestoreProgress(_ progress: Progress) {
+        restoreProgressContinuation?.yield(progress)
+    }
+    
+    func setCommandDisplay(_ display: CommandDisplayViewModel) async {
         self.displayViewModel = display
     }
-
+    
     func verifyInstallation() async throws {
+        let command = ResticCommand(
+            repository: URL(fileURLWithPath: "/tmp"),
+            password: "",
+            operation: .version
+        )
+        
         do {
-            let versionCommand = ResticCommand(arguments: ["version"])
-            _ = try await executeCommand(versionCommand)
+            _ = try await executeCommand(command)
         } catch {
-            AppLogger.shared.error("Restic installation verification failed: \(error.localizedDescription, privacy: .public)")
-            throw ResticError.installationNotFound
+            throw ResticError.notInstalled
+        }
+    }
+    
+    private func executeCommand(_ command: ResticCommand, progressHandler: ((String) -> Void)? = nil) async throws -> String {
+        isProcessing = true
+        defer { isProcessing = false }
+        
+        await displayViewModel?.appendCommand(command.executable + " " + command.arguments.joined(separator: " "))
+        
+        do {
+            let result = try await executor.execute(
+                command.executable,
+                arguments: command.arguments,
+                environment: command.environment
+            ) { output in
+                if let handler = progressHandler {
+                    handler(output)
+                }
+                
+                // Try to parse progress information
+                if let data = output.data(using: .utf8),
+                   let progress = try? JSONDecoder().decode(Progress.self, from: data) {
+                    emitProgress(progress)
+                }
+                
+                await displayViewModel?.appendOutput(output)
+            }
+            
+            if !result.isSuccess {
+                let error = ResticError.commandFailed(underlying: ProcessError.executionFailed(exitCode: result.exitCode, message: result.error))
+                await displayViewModel?.appendError(error.localizedDescription)
+                throw error
+            }
+            
+            return result.output
+            
+        } catch let error as ResticError {
+            await displayViewModel?.appendError(error.localizedDescription)
+            throw error
+        } catch {
+            let resticError = ResticError.commandFailed(underlying: error)
+            await displayViewModel?.appendError(resticError.localizedDescription)
+            throw resticError
+        }
+    }
+    
+    private func parseJSON<T: Decodable>(_ output: String) throws -> T {
+        guard let data = output.data(using: .utf8) else {
+            throw ResticError.unexpectedOutput(description: "Failed to convert output to UTF-8 data")
+        }
+        
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw ResticError.unexpectedOutput(description: "Failed to parse JSON: \(error.localizedDescription)")
         }
     }
     
     func initializeRepository(name: String, path: URL) async throws -> Repository {
         do {
             let initCommand = ResticCommand(
-                repository: path.path,
-                arguments: ["init"]
+                repository: path,
+                password: "",
+                operation: .init
             )
             
             try await executeCommand(initCommand)
@@ -254,7 +276,7 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
         }
     }
     
-    private func scanSingleDirectory(_ url: URL) throws -> RepositoryScanResult {
+    private func scanSingleDirectory(_ url: URL) async throws -> RepositoryScanResult {
         do {
             let command = ResticCommand(
                 repository: url,
@@ -280,7 +302,8 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
         do {
             let command = ResticCommand(
                 repository: repository.path,
-                arguments: ["check", "--json"]
+                password: try repository.retrievePassword(),
+                operation: .check
             )
             
             let output = try await executeCommand(command)
@@ -316,7 +339,7 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
                 )
                 
                 let result = try await executeCommand(command) { output in
-                    if let progress = SnapshotProgress(output: output) {
+                    if let progress = Progress(output: output) {
                         emitProgress(progress)
                     }
                 }
@@ -364,7 +387,7 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
                 )
                 
                 try await executeCommand(command) { output in
-                    if let progress = RestoreProgress(output: output) {
+                    if let progress = Progress(output: output) {
                         emitRestoreProgress(progress)
                     }
                 }
@@ -382,6 +405,8 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
             
             let command = ResticCommand(
                 repository: repository.path,
+                password: try repository.retrievePassword(),
+                operation: .list,
                 arguments: arguments
             )
             
@@ -431,7 +456,9 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
         do {
             let command = ResticCommand(
                 repository: repository.path,
-                arguments: ["forget", snapshot, "--prune"]
+                password: try repository.retrievePassword(),
+                operation: .forget,
+                arguments: [snapshot, "--prune"]
             )
             
             _ = try await executeCommand(command)
@@ -448,7 +475,8 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
         do {
             let command = ResticCommand(
                 repository: repository.path,
-                arguments: ["prune"]
+                password: try repository.retrievePassword(),
+                operation: .prune
             )
             
             _ = try await executeCommand(command) { output in
@@ -456,7 +484,7 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
                 if let match = output.firstMatch(of: /pruning\s+(\d+)\/(\d+)\s+packs/) {
                     if let current = Int(match.1), let total = Int(match.2) {
                         let progress = Double(current) / Double(total)
-                        emitProgress(SnapshotProgress(
+                        emitProgress(Progress(
                             type: .pruning,
                             current: current,
                             total: total,
@@ -496,42 +524,6 @@ final class ResticService: ObservableObject, ResticServiceProtocol {
             return String(match.1)
         }
         return nil
-    }
-    
-    private func executeCommand(_ command: ResticCommand) async throws -> String {
-        isProcessing = true
-        defer { isProcessing = false }
-        
-        displayViewModel?.appendCommand(command.description)
-        
-        do {
-            let output = try await executor.execute(command)
-            displayViewModel?.appendOutput(output)
-            return output
-        } catch {
-            let resticError = handleCommandError(error, command: command.description)
-            displayViewModel?.appendError(resticError.localizedDescription)
-            throw resticError
-        }
-    }
-    
-    private func executeCommand(_ command: ResticCommand, progressHandler: @escaping (String) -> Void) async throws -> String {
-        isProcessing = true
-        defer { isProcessing = false }
-        
-        displayViewModel?.appendCommand(command.description)
-        
-        do {
-            let output = try await executor.execute(command) { output in
-                progressHandler(output)
-            }
-            displayViewModel?.appendOutput(output)
-            return output
-        } catch {
-            let resticError = handleCommandError(error, command: command.description)
-            displayViewModel?.appendError(resticError.localizedDescription)
-            throw resticError
-        }
     }
     
     private func handleCommandError(_ error: Error, command: String) -> ResticError {
@@ -622,7 +614,8 @@ extension ResticService {
         do {
             let command = ResticCommand(
                 repository: repository.path,
-                arguments: ["stats", "--json"]
+                password: try repository.retrievePassword(),
+                operation: .stats
             )
             
             let output = try await executeCommand(command)
@@ -660,7 +653,8 @@ extension ResticService {
             // Run comprehensive check
             let command = ResticCommand(
                 repository: repository.path,
-                arguments: ["check", "--read-data", "--json"]
+                password: try repository.retrievePassword(),
+                operation: .check
             )
             
             let output = try await executeCommand(command)
@@ -740,7 +734,9 @@ extension ResticService {
         do {
             let command = ResticCommand(
                 repository: repository.path,
-                arguments: ["list", "locks", "--json"]
+                password: try repository.retrievePassword(),
+                operation: .list,
+                arguments: ["locks", "--json"]
             )
             
             let output = try await executeCommand(command)
@@ -770,7 +766,8 @@ extension ResticService {
             // Run index rebuild check
             let command = ResticCommand(
                 repository: repository.path,
-                arguments: ["rebuild-index", "--dry-run"]
+                password: try repository.retrievePassword(),
+                operation: .rebuildIndex
             )
             
             _ = try await executeCommand(command)
@@ -783,38 +780,60 @@ extension ResticService {
 
 extension ResticService {
     struct SnapshotDiff: Codable {
-        let added: [DiffEntry]
-        let removed: [DiffEntry]
-        let modified: [DiffEntry]
-        
-        struct DiffEntry: Codable, Identifiable {
-            let id = UUID()
-            let path: String
+        struct DiffEntry: Codable {
             let type: EntryType
+            let path: String
             let size: UInt64?
             let permissions: String?
             let modTime: Date?
             
             enum CodingKeys: String, CodingKey {
-                case path, type, size, permissions
+                case type
+                case path
+                case size
+                case permissions = "perm"
                 case modTime = "mtime"
+            }
+            
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                type = try container.decode(EntryType.self, forKey: .type)
+                path = try container.decode(String.self, forKey: .path)
+                size = try container.decodeIfPresent(UInt64.self, forKey: .size)
+                permissions = try container.decodeIfPresent(String.self, forKey: .permissions)
+                
+                if let timeString = try container.decodeIfPresent(String.self, forKey: .modTime),
+                   let timeInterval = TimeInterval(timeString) {
+                    modTime = Date(timeIntervalSince1970: timeInterval)
+                } else {
+                    modTime = nil
+                }
+            }
+            
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                try container.encode(type, forKey: .type)
+                try container.encode(path, forKey: .path)
+                try container.encodeIfPresent(size, forKey: .size)
+                try container.encodeIfPresent(permissions, forKey: .permissions)
+                if let modTime = modTime {
+                    try container.encode(String(modTime.timeIntervalSince1970), forKey: .modTime)
+                }
             }
         }
         
-        var hasChanges: Bool {
-            !added.isEmpty || !removed.isEmpty || !modified.isEmpty
-        }
-        
-        var totalChanges: Int {
-            added.count + removed.count + modified.count
-        }
+        let added: [DiffEntry]
+        let removed: [DiffEntry]
+        let modified: [DiffEntry]
     }
     
     func compareSnapshots(repository: Repository, snapshot1: String, snapshot2: String) async throws -> SnapshotDiff {
         do {
             let command = ResticCommand(
                 repository: repository.path,
-                arguments: ["diff", snapshot1, snapshot2, "--json"]
+                password: try repository.retrievePassword(),
+                operation: .diff,
+                arguments: [snapshot1, snapshot2, "--json"]
             )
             
             let output = try await executeCommand(command)
@@ -846,6 +865,8 @@ extension ResticService {
             
             let command = ResticCommand(
                 repository: repository.path,
+                password: try repository.retrievePassword(),
+                operation: .find,
                 arguments: arguments
             )
             
@@ -868,7 +889,9 @@ extension ResticService {
         do {
             let command = ResticCommand(
                 repository: repository.path,
-                arguments: ["snapshots", snapshot, "--json"]
+                password: try repository.retrievePassword(),
+                operation: .snapshots,
+                arguments: [snapshot, "--json"]
             )
             
             let output = try await executeCommand(command)
@@ -881,7 +904,9 @@ extension ResticService {
             // Get statistics for this snapshot
             let statsCommand = ResticCommand(
                 repository: repository.path,
-                arguments: ["stats", "--json", snapshot]
+                password: try repository.retrievePassword(),
+                operation: .stats,
+                arguments: [snapshot, "--json"]
             )
             
             let statsOutput = try await executeCommand(statsCommand)
@@ -908,7 +933,9 @@ extension ResticService {
     private func getLastModifiedFile(repository: Repository, snapshot: String) async throws -> SnapshotEntry? {
         let command = ResticCommand(
             repository: repository.path,
-            arguments: ["ls", "--json", "--sort-by-time", snapshot]
+            password: try repository.retrievePassword(),
+            operation: .list,
+            arguments: ["--json", "--sort-by-time", snapshot]
         )
         
         let output = try await executeCommand(command)
@@ -956,7 +983,7 @@ struct SnapshotEntry: Identifiable, Codable {
     }
 }
 
-struct SnapshotProgress: Codable {
+struct Progress: Codable {
     let totalFiles: Int
     let processedFiles: Int
     let totalBytes: Int64
@@ -972,7 +999,7 @@ struct SnapshotProgress: Codable {
         self.currentFile = nil
     }
     
-    init(type: SnapshotProgressType, current: Int, total: Int, percentage: Double) {
+    init(type: ProgressType, current: Int, total: Int, percentage: Double) {
         self.totalFiles = total
         self.processedFiles = current
         self.totalBytes = 0
@@ -980,47 +1007,8 @@ struct SnapshotProgress: Codable {
         self.currentFile = nil
     }
     
-    enum SnapshotProgressType {
+    enum ProgressType {
         case pruning
-    }
-}
-
-struct RestoreProgress: Codable {
-    let totalFiles: Int
-    let processedFiles: Int
-    let totalBytes: Int64
-    let processedBytes: Int64
-    let currentFile: String?
-    
-    init(output: String) {
-        // Parse progress from output
-        self.totalFiles = 0
-        self.processedFiles = 0
-        self.totalBytes = 0
-        self.processedBytes = 0
-        self.currentFile = nil
-    }
-}
-
-struct Repository: Identifiable, Hashable, Codable {
-    let id: UUID
-    let name: String
-    let path: URL
-    let createdAt: Date
-    
-    init(id: UUID = UUID(), name: String, path: URL, createdAt: Date = Date()) {
-        self.id = id
-        self.name = name
-        self.path = path
-        self.createdAt = createdAt
-    }
-    
-    static func == (lhs: Repository, rhs: Repository) -> Bool {
-        lhs.id == rhs.id
-    }
-    
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
     }
 }
 
@@ -1077,6 +1065,8 @@ func listSnapshots(repository: Repository, filter: SnapshotFilter? = nil) async 
         
         let command = ResticCommand(
             repository: repository.path,
+            password: try repository.retrievePassword(),
+            operation: .snapshots,
             arguments: arguments
         )
         
@@ -1127,7 +1117,9 @@ private func calculateGroupSize(repository: Repository, snapshots: [Snapshot]) a
     let snapshotIds = snapshots.map { $0.id }
     let command = ResticCommand(
         repository: repository.path,
-        arguments: ["stats", "--json"] + snapshotIds
+        password: try repository.retrievePassword(),
+        operation: .stats,
+        arguments: snapshotIds + ["--json"]
     )
     
     let output = try await executeCommand(command)
@@ -1190,7 +1182,9 @@ func applyMaintenancePolicy(repository: Repository, policy: MaintenancePolicy) a
     do {
         let command = ResticCommand(
             repository: repository.path,
-            arguments: ["forget", "--json", "--prune"] + policy.toArguments()
+            password: try repository.retrievePassword(),
+            operation: .forget,
+            arguments: ["--json", "--prune"] + policy.toArguments()
         )
         
         let output = try await executeCommand(command) { progressOutput in
@@ -1198,7 +1192,7 @@ func applyMaintenancePolicy(repository: Repository, policy: MaintenancePolicy) a
             if let match = progressOutput.firstMatch(of: /pruning\s+(\d+)\/(\d+)\s+packs/) {
                 if let current = Int(match.1), let total = Int(match.2) {
                     let progress = Double(current) / Double(total)
-                    emitProgress(SnapshotProgress(
+                    emitProgress(Progress(
                         type: .pruning,
                         current: current,
                         total: total,

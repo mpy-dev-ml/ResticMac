@@ -65,7 +65,18 @@ class MountViewModel: ObservableObject {
         defer { isLoading = false }
         
         do {
-            repositories = try await resticService.listRepositories()
+            let scanResults = try await resticService.scanForRepositories(in: FileManager.default.homeDirectoryForCurrentUser)
+            repositories = scanResults.compactMap { result in
+                if result.isValid {
+                    return Repository(
+                        id: result.id,
+                        name: result.path.lastPathComponent,
+                        path: result.path,
+                        createdAt: Date()
+                    )
+                }
+                return nil
+            }
         } catch {
             self.error = error
         }
